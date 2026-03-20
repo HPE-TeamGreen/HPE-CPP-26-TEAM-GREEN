@@ -118,7 +118,16 @@ Main components:
 
 ##  Weekly Progress
 
+
 ### Week 1
+- Learned version control fundamentals using Git & GitHub  
+- Understood repository management and collaboration workflows  
+- Learned basics of containerization using Docker  
+- Studied PostgreSQL database concepts and basic SQL  
+
+---
+
+### Week 2
 
 * Project idea discussion and problem understanding
 * Identified stakeholders and actors (Logistics Manager, QA Officer, etc.) 
@@ -132,7 +141,7 @@ Main components:
 
 ---
 
-### Week 2
+### Week 3
 
 * Designed complete microservices architecture
 * Defined working of all services 
