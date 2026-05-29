@@ -5,7 +5,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from aiokafka import AIOKafkaProducer
-
+import aiohttp
 # Configure professional logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [%(levelname)s] - %(message)s')
 logger = logging.getLogger(__name__)
@@ -18,11 +18,26 @@ CE_TYPE_READING       = "com.logistics.telemetry.reading"
 CE_TYPE_ALERT_BREACH  = "com.logistics.telemetry.alert.temperature_breach"
 CE_TYPE_BUFFERED      = "com.logistics.telemetry.reading.buffered"
 
+SHIPMENT_API_URL = "http://localhost:8000/sensors/active"
+
 async def fetch_in_transit_sensors():
-    """Mocks the HTTP call to the Shipment API to get active sensors."""
-    logger.info("Fetching active 'in-transit' sensors from Shipment API...")
-    await asyncio.sleep(0.5)
-    return ["SEN_001", "SEN_002", "SEN_003"]
+  """Calls the Shipment API to get dynamically active sensors."""
+    logger.info(f"Fetching active 'in-transit' sensors from {SHIPMENT_API_URL}...")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(SHIPMENT_API_URL) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    # Extract just the sensor_ids from the ActiveSensorInfo payloads
+                    sensors = [item["sensor_id"] for item in data]
+                    logger.info(f"Found {len(sensors)} active sensors: {sensors}")
+                    return sensors
+                else:
+                    logger.error(f"Failed to fetch sensors. HTTP {response.status}")
+                    return []
+    except Exception as e:
+        logger.error(f"Error connecting to Shipment API: {e}")
+        return []
 
 def build_cloud_event(event_type: str, sensor_id: str, data: dict) -> dict:
     """
