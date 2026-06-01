@@ -42,7 +42,7 @@ async def setup_db(pool: asyncpg.Pool):
         await conn.execute("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS telemetry_readings (
-                event_id     UUID         PRIMARY KEY,
+                event_id     UUID         NOT NULL,
                 sensor_id    VARCHAR(50)  NOT NULL,
                 shipment_id  VARCHAR(100) NOT NULL,
                 event_type   VARCHAR(100) NOT NULL,
@@ -52,7 +52,8 @@ async def setup_db(pool: asyncpg.Pool):
                 longitude    FLOAT,
                 is_excursion BOOLEAN      NOT NULL DEFAULT FALSE,
                 is_buffered  BOOLEAN      NOT NULL DEFAULT FALSE,
-                ingested_at  TIMESTAMPTZ  DEFAULT NOW()
+                ingested_at  TIMESTAMPTZ  DEFAULT NOW(),
+                PRIMARY KEY (event_id, ingested_at)
             );
         """)
         await conn.execute("""
@@ -108,7 +109,7 @@ async def process_batch(batch, pool: asyncpg.Pool, consumer: AIOKafkaConsumer):
                      recorded_at, temperature, latitude, longitude,
                      is_excursion, is_buffered)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-                ON CONFLICT (event_id) DO NOTHING;
+                ON CONFLICT (event_id, ingested_at) DO NOTHING;
             """, records)
         await consumer.commit()
         logger.info(f"✅ Stored {len(records)} records.")

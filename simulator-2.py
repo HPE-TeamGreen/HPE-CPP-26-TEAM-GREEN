@@ -6,12 +6,13 @@ import uuid
 from datetime import datetime, timezone
 from aiokafka import AIOKafkaProducer
 import aiohttp
+import os
 
 # Configure professional logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [%(levelname)s] - %(message)s')
 logger = logging.getLogger(__name__)
 
-KAFKA_BROKER = "localhost:9092"
+KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:9092")
 KAFKA_TOPIC = "telemetry-events"
 
 # --- CloudEvents Type Constants ---
@@ -19,7 +20,7 @@ CE_TYPE_READING       = "com.logistics.telemetry.reading"
 CE_TYPE_ALERT_BREACH  = "com.logistics.telemetry.alert.temperature_breach"
 CE_TYPE_BUFFERED      = "com.logistics.telemetry.reading.buffered"
 
-SHIPMENT_API_URL = "http://localhost:8000/sensors/active"
+SHIPMENT_API_URL = os.getenv("SHIPMENT_API_URL", "http://localhost:8000/sensors/active")
 
 async def fetch_in_transit_sensors():
     """Calls the Shipment API to get dynamically active sensors."""
