@@ -1,59 +1,33 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { excursions as mockExcursions } from '../../data/mockData';
 import PageHeader from '../../components/layout/PageHeader';
 import StatusBadge from '../../components/layout/StatusBadge';
 import Button from '../../components/layout/Button';
 import styles from './TablePage.module.css';
 import modalStyles from './Modal.module.css';
 
-const EXCURSIONS_ENDPOINT = '/api/excursions';
-
 export default function Excursions() {
-  const { resolveExcursion, can } = useApp();
+  const { excursions: contextExcursions, excursionsLoading, isLiveExcursions, resolveExcursion, loadExcursions, can } = useApp();
   const [excursions, setExcursions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [filter, setFilter] = useState('ALL');
   const [selected, setSelected] = useState(null);
   const [note, setNote] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [isLive, setIsLive] = useState(false);
   const canResolve = can('resolveExcursion');
 
   useEffect(() => {
-    const controller = new AbortController();
-    const loadExcursions = async () => {
-      try {
-        setLoading(true);
-        setError('');
-        const response = await fetch(EXCURSIONS_ENDPOINT, { signal: controller.signal });
-        if (!response.ok) {
-          throw new Error(`Request failed (${response.status})`);
-        }
-        const data = await response.json();
-        setExcursions(Array.isArray(data) ? data : []);
-        setIsLive(true);
-        setLastUpdated(new Date());
-      } catch (err) {
-        if (err.name !== 'AbortError') {
-          setExcursions(mockExcursions);
-          setError('');
-          setIsLive(false);
-          setLastUpdated(new Date());
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
+    setExcursions(contextExcursions);
+    setLastUpdated(new Date());
+  }, [contextExcursions]);
 
-    loadExcursions();
-    const pollId = setInterval(loadExcursions, 30000);
-    return () => {
-      clearInterval(pollId);
-      controller.abort();
-    };
+  // Periodic refresh
+  useEffect(() => {
+    const pollId = setInterval(() => {
+      loadExcursions();
+    }, 30000);
+    return () => clearInterval(pollId);
   }, []);
+
 
   const filtered = filter === 'ALL' ? excursions : excursions.filter(e => e.status === filter);
 
@@ -117,8 +91,8 @@ export default function Excursions() {
         actions={
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
             <span style={{
-              background: isLive ? 'var(--accent-green)' : 'var(--bg-hover)',
-              color: isLive ? 'var(--bg)' : 'var(--text-muted)',
+              background: isLiveExcursions ? 'var(--accent-green)' : 'var(--bg-hover)',
+              color: isLiveExcursions ? 'var(--bg)' : 'var(--text-muted)',
               padding: '3px 8px',
               borderRadius: 999,
               fontSize: 11,
@@ -126,7 +100,7 @@ export default function Excursions() {
               letterSpacing: 0.4,
               textTransform: 'uppercase'
             }}>
-              {isLive ? 'Live' : 'Mock'}
+              {isLiveExcursions ? 'Live' : 'Mock'}
             </span>
             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
               {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Updating...'}
@@ -146,7 +120,7 @@ export default function Excursions() {
           <Button
             variant="secondary"
             onClick={handleExportCsv}
-            disabled={loading || filtered.length === 0}
+            disabled={excursionsLoading || filtered.length === 0}
             style={{ fontSize: 11, padding: '6px 12px' }}
           >
             Export CSV
@@ -162,28 +136,21 @@ export default function Excursions() {
               </tr>
             </thead>
             <tbody>
-              {loading && (
+              {excursionsLoading && (
                 <tr className={styles.row}>
                   <td colSpan={canResolve ? 8 : 7} style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                     Loading excursions...
                   </td>
                 </tr>
               )}
-              {!loading && error && (
-                <tr className={styles.row}>
-                  <td colSpan={canResolve ? 8 : 7} style={{ color: 'var(--accent-red)', fontSize: 12 }}>
-                    {error}
-                  </td>
-                </tr>
-              )}
-              {!loading && !error && filtered.length === 0 && (
+              {!excursionsLoading && filtered.length === 0 && (
                 <tr className={styles.row}>
                   <td colSpan={canResolve ? 8 : 7} style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                     No excursions found.
                   </td>
                 </tr>
               )}
-              {!loading && !error && filtered.map(e => (
+              {!excursionsLoading && filtered.map(e => (
                 <tr key={e.id} className={styles.row}>
                   <td><span className={styles.mono}>{e.id}</span></td>
                   <td><span className={styles.mono}>{e.shipmentId}</span></td>

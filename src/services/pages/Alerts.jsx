@@ -6,7 +6,7 @@ import Button from '../../components/layout/Button';
 import styles from './TablePage.module.css';
 
 export default function Alerts() {
-  const { alerts, acknowledgeAlert, can } = useApp();
+  const { alerts, acknowledgeAlert, acknowledgeAllAlerts, can } = useApp();
   const [filter, setFilter] = useState('ALL');
   const canAck = can('acknowledgeAlert');
 
@@ -21,7 +21,7 @@ export default function Alerts() {
         subtitle={`${alerts.filter(a => !a.acknowledged).length} unacknowledged`}
         actions={
           canAck && (
-            <Button variant="secondary" onClick={() => alerts.forEach(a => acknowledgeAlert(a.id))}>
+            <Button variant="secondary" onClick={() => acknowledgeAllAlerts()}>
               Acknowledge All
             </Button>
           )

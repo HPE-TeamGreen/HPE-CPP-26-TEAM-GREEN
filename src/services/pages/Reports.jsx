@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from 'recharts';
 import PageHeader from '../../components/layout/PageHeader';
 import Button from '../../components/layout/Button';
@@ -75,6 +75,19 @@ export default function Reports() {
   const { can } = useApp();
   const canExport = can('exportReport');
   const [productQuery, setProductQuery] = useState('');
+  const [complianceStats, setComplianceStats] = useState(null);
+
+  useEffect(() => {
+    import('../reportingService').then(({ getComplianceReport }) => {
+      getComplianceReport()
+        .then(res => {
+          if (res && res.statistics) setComplianceStats(res.statistics);
+        })
+        .catch(() => {
+          // Fall back to mock if reporting service is unreachable
+        });
+    });
+  }, []);
 
   const visibleProducts = productData.filter(p => {
     if (!productQuery.trim()) return true;
@@ -225,10 +238,10 @@ export default function Reports() {
         )}
         <div className={styles.summaryCards}>
           {[
-            { label: 'Total Shipments (6 months)', value: '137', color: 'var(--accent-blue)' },
-            { label: 'Total Excursions', value: '15', color: 'var(--accent-red)' },
-            { label: 'Avg Compliance Rate', value: '90.2%', color: 'var(--accent-green)' },
-            { label: 'Avg Breach Duration', value: '22 min', color: 'var(--accent-yellow)' },
+            { label: 'Active Shipments', value: complianceStats?.active_shipments ?? '137', color: 'var(--accent-blue)' },
+            { label: 'Total Excursions', value: complianceStats?.total_excursions ?? '15', color: 'var(--accent-red)' },
+            { label: 'Avg Compliance Rate', value: complianceStats ? `${complianceStats.compliance_percentage}%` : '90.2%', color: 'var(--accent-green)' },
+            { label: 'Total Readings', value: complianceStats?.total_readings ?? '22.5k', color: 'var(--text-secondary)' },
           ].map(c => (
             <div key={c.label} className={styles.summaryCard}>
               <div className={styles.summaryLabel}>{c.label}</div>

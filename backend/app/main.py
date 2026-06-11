@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import Column, DateTime, Enum as SAEnum, Float, ForeignKey, String, create_engine
+from sqlalchemy import Boolean, Column, DateTime, Enum as SAEnum, Float, ForeignKey, Integer, String, Text, create_engine, desc
 from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
 
 load_dotenv()
@@ -61,7 +61,60 @@ class SensorModel(Base):
     shipment = relationship("ShipmentModel", back_populates="sensors")
 
 
-Base.metada& "..\.venv\Scripts\python.exe" -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000& "..\.venv\Scripts\python.exe" -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000ta.create_all(bind=engine)
+class TelemetryReadingModel(Base):
+    """Mirrors the table created by the Telemetry Kafka consumer."""
+    __tablename__ = "telemetry_readings"
+    __table_args__ = {"extend_existing": True}
+
+    event_id = Column(String, primary_key=True)
+    sensor_id = Column(String(50), nullable=False)
+    shipment_id = Column(String(100), nullable=False)
+    event_type = Column(String(100), nullable=False)
+    recorded_at = Column(DateTime(timezone=True), nullable=False)
+    temperature = Column(Float, nullable=False)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    is_excursion = Column(Boolean, nullable=False, default=False)
+    is_buffered = Column(Boolean, nullable=False, default=False)
+
+
+class AlertModel(Base):
+    """Mirrors the table created by the Alert Kafka consumer."""
+    __tablename__ = "alerts"
+    __table_args__ = {"extend_existing": True}
+
+    alert_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    reading_event_id = Column(String, nullable=False)
+    sensor_id = Column(String(50), nullable=False)
+    shipment_id = Column(String(100), nullable=False)
+    temperature = Column(Float, nullable=False)
+    min_temp_limit = Column(Float, nullable=False)
+    max_temp_limit = Column(Float, nullable=False)
+    origin = Column(String(100), nullable=True)
+    destination = Column(String(100), nullable=True)
+    recorded_at = Column(DateTime(timezone=True), nullable=False)
+    is_buffered = Column(Boolean, nullable=False, default=False)
+    acknowledged = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class ExcursionModel(Base):
+    """Tracks temperature excursion events."""
+    __tablename__ = "excursion_events"
+    __table_args__ = {"extend_existing": True}
+
+    excursion_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    shipment_id = Column(String(100), nullable=False)
+    sensor_id = Column(String(50), nullable=False)
+    breach_time = Column(DateTime(timezone=True), nullable=False)
+    recorded_temp = Column(Float, nullable=False)
+    status = Column(String(20), nullable=False, default="OPEN")
+    acknowledged_by = Column(String(100), nullable=True)
+    resolution_note = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+Base.metadata.create_all(bind=engine)
 
 
 class ShipmentCreate(BaseModel):
@@ -115,6 +168,64 @@ class ActiveSensorInfo(BaseModel):
     max_temp_limit: float
     origin: str
     destination: str
+
+
+# --- Telemetry Schemas ---
+
+class TelemetryReadingResponse(BaseModel):
+    event_id: str
+    sensor_id: str
+    shipment_id: str
+    event_type: str
+    recorded_at: datetime
+    temperature: float
+    latitude: Optional[float]
+    longitude: Optional[float]
+    is_excursion: bool
+    is_buffered: bool
+
+    model_config = {"from_attributes": True}
+
+
+# --- Alert Schemas ---
+
+class AlertResponse(BaseModel):
+    alert_id: str
+    reading_event_id: str
+    sensor_id: str
+    shipment_id: str
+    temperature: float
+    min_temp_limit: float
+    max_temp_limit: float
+    origin: Optional[str]
+    destination: Optional[str]
+    recorded_at: datetime
+    is_buffered: bool
+    acknowledged: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# --- Excursion Schemas ---
+
+class ExcursionResponse(BaseModel):
+    excursion_id: str
+    shipment_id: str
+    sensor_id: str
+    breach_time: datetime
+    recorded_temp: float
+    status: str
+    acknowledged_by: Optional[str]
+    resolution_note: Optional[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ExcursionResolve(BaseModel):
+    resolution_note: str
+
 
 
 def get_db():
@@ -288,3 +399,133 @@ def get_active_sensors(db: Session = Depends(get_db)):
         )
         for sensor, shipment in results
     ]
+
+
+# ─── Telemetry Endpoints ───────────────────────────────────────────────
+
+@app.get(
+    "/telemetry/latest",
+    response_model=list[TelemetryReadingResponse],
+    tags=["Telemetry"],
+)
+def get_latest_telemetry(
+    sensor_id: str,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+):
+    """Return the most recent telemetry readings for a given sensor."""
+    readings = (
+        db.query(TelemetryReadingModel)
+        .filter(TelemetryReadingModel.sensor_id == sensor_id)
+        .order_by(desc(TelemetryReadingModel.recorded_at))
+        .limit(limit)
+        .all()
+    )
+    return list(reversed(readings))
+
+
+@app.get(
+    "/telemetry/history",
+    response_model=list[TelemetryReadingResponse],
+    tags=["Telemetry"],
+)
+def get_telemetry_history(
+    sensor_id: Optional[str] = None,
+    shipment_id: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Return telemetry readings filtered by sensor, shipment, or time range."""
+    query = db.query(TelemetryReadingModel)
+    if sensor_id:
+        query = query.filter(TelemetryReadingModel.sensor_id == sensor_id)
+    if shipment_id:
+        query = query.filter(TelemetryReadingModel.shipment_id == shipment_id)
+    if start_time:
+        query = query.filter(TelemetryReadingModel.recorded_at >= start_time)
+    if end_time:
+        query = query.filter(TelemetryReadingModel.recorded_at <= end_time)
+    return query.order_by(TelemetryReadingModel.recorded_at).limit(500).all()
+
+
+# ─── Alert Endpoints ──────────────────────────────────────────────────
+
+@app.get(
+    "/alerts",
+    response_model=list[AlertResponse],
+    tags=["Alerts"],
+)
+def list_alerts(
+    type: Optional[str] = None,
+    acknowledged: Optional[bool] = None,
+    db: Session = Depends(get_db),
+):
+    """Return all alerts, optionally filtered."""
+    query = db.query(AlertModel)
+    if acknowledged is not None:
+        query = query.filter(AlertModel.acknowledged == acknowledged)
+    return query.order_by(desc(AlertModel.created_at)).all()
+
+
+@app.patch(
+    "/alerts/{alert_id}/acknowledge",
+    response_model=AlertResponse,
+    tags=["Alerts"],
+)
+def acknowledge_alert(alert_id: str, db: Session = Depends(get_db)):
+    alert = db.query(AlertModel).filter(AlertModel.alert_id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
+    alert.acknowledged = True
+    db.commit()
+    db.refresh(alert)
+    return alert
+
+
+@app.patch(
+    "/alerts/acknowledge-all",
+    tags=["Alerts"],
+)
+def acknowledge_all_alerts(db: Session = Depends(get_db)):
+    db.query(AlertModel).filter(AlertModel.acknowledged == False).update({"acknowledged": True})
+    db.commit()
+    return {"status": "ok"}
+
+
+# ─── Excursion Endpoints ──────────────────────────────────────────────
+
+@app.get(
+    "/excursions",
+    response_model=list[ExcursionResponse],
+    tags=["Excursions"],
+)
+def list_excursions(
+    status_filter: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Return all excursion events, optionally filtered by status."""
+    query = db.query(ExcursionModel)
+    if status_filter:
+        query = query.filter(ExcursionModel.status == status_filter)
+    return query.order_by(desc(ExcursionModel.created_at)).all()
+
+
+@app.patch(
+    "/excursions/{excursion_id}/resolve",
+    response_model=ExcursionResponse,
+    tags=["Excursions"],
+)
+def resolve_excursion(
+    excursion_id: str,
+    payload: ExcursionResolve,
+    db: Session = Depends(get_db),
+):
+    excursion = db.query(ExcursionModel).filter(ExcursionModel.excursion_id == excursion_id).first()
+    if not excursion:
+        raise HTTPException(status_code=404, detail=f"Excursion {excursion_id} not found")
+    excursion.status = "CLOSED"
+    excursion.resolution_note = payload.resolution_note
+    db.commit()
+    db.refresh(excursion)
+    return excursion

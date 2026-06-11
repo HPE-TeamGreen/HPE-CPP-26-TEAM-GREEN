@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { shipments as mockShipments, sensors as mockSensors, alerts as initialAlerts, excursions as initialExcursions, users } from '../data/mockData';
 import { hasPermission } from '../data/roles';
 import { createShipment as createShipmentApi, listShipments, registerSensor as registerSensorApi } from '../services/shipmentService';
+import { listAlerts as listAlertsApi, acknowledgeAlert as acknowledgeAlertApi, acknowledgeAllAlerts as acknowledgeAllAlertsApi } from '../services/alertService';
+import { listExcursions as listExcursionsApi, resolveExcursion as resolveExcursionApi } from '../services/excursionService';
 
 const AppContext = createContext();
 
@@ -11,8 +13,12 @@ export function AppProvider({ children }) {
   const [shipmentsError, setShipmentsError] = useState('');
   const [sensors, setSensors] = useState(mockSensors);
   const [alerts, setAlerts] = useState(initialAlerts);
+  const [alertsLoading, setAlertsLoading] = useState(false);
   const [excursions, setExcursions] = useState(initialExcursions);
+  const [excursionsLoading, setExcursionsLoading] = useState(false);
   const [user, setUser] = useState(null); // null = not logged in
+  const [isLiveAlerts, setIsLiveAlerts] = useState(false);
+  const [isLiveExcursions, setIsLiveExcursions] = useState(false);
 
   const mockById = useMemo(() => {
     const map = new Map();
@@ -85,8 +91,72 @@ export function AppProvider({ children }) {
     return mapped;
   };
 
+  // --- Alert mapping ---
+  const mapAlertFromApi = (apiAlert) => ({
+    id: apiAlert.alert_id,
+    shipmentId: apiAlert.shipment_id,
+    sensorId: apiAlert.sensor_id,
+    type: apiAlert.temperature > apiAlert.max_temp_limit || apiAlert.temperature < apiAlert.min_temp_limit ? 'CRITICAL' : 'WARNING',
+    message: `Temperature ${apiAlert.temperature > apiAlert.max_temp_limit ? 'breach' : 'warning'} — recorded ${apiAlert.temperature}°C (limits: ${apiAlert.min_temp_limit}–${apiAlert.max_temp_limit}°C)`,
+    time: new Date(apiAlert.recorded_at).toLocaleString(),
+    acknowledged: apiAlert.acknowledged,
+    rawId: apiAlert.alert_id,
+  });
+
+  const loadAlerts = async () => {
+    try {
+      setAlertsLoading(true);
+      const data = await listAlertsApi();
+      if (Array.isArray(data) && data.length > 0) {
+        setAlerts(data.map(mapAlertFromApi));
+        setIsLiveAlerts(true);
+      } else {
+        setAlerts(initialAlerts);
+        setIsLiveAlerts(false);
+      }
+    } catch (err) {
+      setAlerts(initialAlerts);
+      setIsLiveAlerts(false);
+    } finally {
+      setAlertsLoading(false);
+    }
+  };
+
+  // --- Excursion mapping ---
+  const mapExcursionFromApi = (apiExcursion) => ({
+    id: apiExcursion.excursion_id,
+    shipmentId: apiExcursion.shipment_id,
+    sensorId: apiExcursion.sensor_id,
+    breachTime: apiExcursion.breach_time,
+    recordedTemp: apiExcursion.recorded_temp,
+    status: apiExcursion.status,
+    acknowledgedBy: apiExcursion.acknowledged_by,
+    resolutionNote: apiExcursion.resolution_note,
+  });
+
+  const loadExcursions = async () => {
+    try {
+      setExcursionsLoading(true);
+      const data = await listExcursionsApi();
+      if (Array.isArray(data) && data.length > 0) {
+        setExcursions(data.map(mapExcursionFromApi));
+        setIsLiveExcursions(true);
+      } else {
+        setExcursions(initialExcursions);
+        setIsLiveExcursions(false);
+      }
+    } catch (err) {
+      setExcursions(initialExcursions);
+      setIsLiveExcursions(false);
+    } finally {
+      setExcursionsLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadShipments();
+    loadAlerts();
+    loadExcursions();
   }, []);
 
   const login = (email, password) => {
@@ -101,16 +171,40 @@ export function AppProvider({ children }) {
 
   const can = (action) => user ? hasPermission(user.role, action) : false;
 
-  const acknowledgeAlert = (id) => {
+  const acknowledgeAlert = async (id) => {
     if (!can('acknowledgeAlert')) return;
+    // Optimistic update
     setAlerts(prev => prev.map(a => a.id === id ? { ...a, acknowledged: true } : a));
+    // Try server-side acknowledge
+    try {
+      await acknowledgeAlertApi(id);
+    } catch (err) {
+      // Silent fail — optimistic update stays
+    }
   };
 
-  const resolveExcursion = (id, note) => {
+  const acknowledgeAllAlertsAction = async () => {
+    if (!can('acknowledgeAlert')) return;
+    setAlerts(prev => prev.map(a => ({ ...a, acknowledged: true })));
+    try {
+      await acknowledgeAllAlertsApi();
+    } catch (err) {
+      // Silent fail
+    }
+  };
+
+  const resolveExcursion = async (id, note) => {
     if (!can('resolveExcursion')) return;
+    // Optimistic update
     setExcursions(prev => prev.map(e =>
       e.id === id ? { ...e, status: 'CLOSED', acknowledgedBy: user.name, resolutionNote: note } : e
     ));
+    // Try server-side resolve
+    try {
+      await resolveExcursionApi(id, note);
+    } catch (err) {
+      // Silent fail — optimistic update stays
+    }
   };
 
   const openCount = excursions.filter(e => e.status === 'OPEN').length;
@@ -120,8 +214,12 @@ export function AppProvider({ children }) {
     <AppContext.Provider value={{
       user, login, logout, can,
       shipments, shipmentsLoading, shipmentsError, sensors, alerts, excursions,
-      loadShipments, createShipment, createSensor,
-      acknowledgeAlert, resolveExcursion,
+      alertsLoading, excursionsLoading,
+      isLiveAlerts, isLiveExcursions,
+      loadShipments, loadAlerts, loadExcursions,
+      createShipment, createSensor,
+      acknowledgeAlert, acknowledgeAllAlerts: acknowledgeAllAlertsAction,
+      resolveExcursion,
       openCount, unacknowledgedAlerts,
     }}>
       {children}

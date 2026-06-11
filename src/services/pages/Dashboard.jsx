@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 import { useApp } from '../../context/AppContext';
@@ -6,6 +6,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import StatusBadge from '../../components/layout/StatusBadge';
 import Button from '../../components/layout/Button';
 import { sensorTelemetry } from '../../data/mockData';
+import { getLatestReadings } from '../telemetryService';
 import styles from './Dashboard.module.css';
 
 const getTempStatus = (s) => {
@@ -22,12 +23,40 @@ export default function Dashboard() {
   const { shipments, alerts, excursions, openCount, unacknowledgedAlerts, acknowledgeAlert, can } = useApp();
   const navigate = useNavigate();
   const [selectedSensor, setSelectedSensor] = useState('S-14');
+  const [liveTelemetry, setLiveTelemetry] = useState(null);
+
+  // Attempt to fetch live telemetry, fall back to mock
+  useEffect(() => {
+    let cancelled = false;
+    const fetchTelemetry = async () => {
+      try {
+        const readings = await getLatestReadings(selectedSensor, 10);
+        if (!cancelled && Array.isArray(readings) && readings.length > 0) {
+          const mockFallback = sensorTelemetry[selectedSensor];
+          setLiveTelemetry({
+            shipmentId: readings[0].shipment_id || mockFallback?.shipmentId || '',
+            minTemp: mockFallback?.minTemp ?? 2,
+            maxTemp: mockFallback?.maxTemp ?? 8,
+            data: readings.map(r => ({
+              time: new Date(r.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              temp: r.temperature,
+            })),
+          });
+        }
+      } catch {
+        if (!cancelled) setLiveTelemetry(null); // fall back to mock
+      }
+    };
+    fetchTelemetry();
+    const intervalId = setInterval(fetchTelemetry, 15000);
+    return () => { cancelled = true; clearInterval(intervalId); };
+  }, [selectedSensor]);
 
   const activeShipments = shipments.filter(s => s.status === 'IN_TRANSIT');
   const onlineSensors = 6;
   const complianceRate = 94;
 
-  const telemetry = sensorTelemetry[selectedSensor];
+  const telemetry = liveTelemetry || sensorTelemetry[selectedSensor];
   const allTemps = telemetry.data.map(d => d.temp);
   const tempMin = Math.min(...allTemps, telemetry.minTemp);
   const tempMax = Math.max(...allTemps, telemetry.maxTemp);

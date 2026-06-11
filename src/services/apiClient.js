@@ -1,16 +1,14 @@
 import { mockApiRequest } from './mockApi';
 
 const DEFAULT_BASE_URL = 'http://localhost:8000';
+const DEFAULT_REPORTING_URL = 'http://localhost:8001';
 const USE_MOCK_API = process.env.REACT_APP_USE_MOCK_API === 'true';
 
 const API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, '');
+const REPORTING_BASE_URL = (process.env.REACT_APP_REPORTING_API_URL || DEFAULT_REPORTING_URL).replace(/\/$/, '');
 
-export async function apiFetch(path, options = {}) {
-  if (USE_MOCK_API) {
-    return mockApiRequest(path, options);
-  }
-
-  const url = `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+async function doFetch(baseUrl, path, options = {}) {
+  const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = { ...(options.headers || {}) };
 
   if (options.body && !headers['Content-Type']) {
@@ -35,4 +33,18 @@ export async function apiFetch(path, options = {}) {
   }
 
   return data;
+}
+
+export async function apiFetch(path, options = {}) {
+  if (USE_MOCK_API) {
+    return mockApiRequest(path, options);
+  }
+  return doFetch(API_BASE_URL, path, options);
+}
+
+export async function reportingFetch(path, options = {}) {
+  if (USE_MOCK_API) {
+    return mockApiRequest(path, options);
+  }
+  return doFetch(REPORTING_BASE_URL, path, options);
 }
