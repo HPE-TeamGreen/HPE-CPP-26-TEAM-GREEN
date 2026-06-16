@@ -1,0 +1,303 @@
+.page { min-height: 100vh; }
+
+.content { padding: 0 28px 28px; }
+
+.controlsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.filters {
+  display: flex;
+  gap: 6px;
+}
+
+.searchWrap { margin-left: auto; }
+
+.searchInput {
+  min-width: 260px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  transition: border 0.15s ease;
+}
+
+.searchInput:focus { border-color: var(--accent-blue); }
+
+.emptyState {
+  background: var(--bg-card);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.emptyTitle { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.emptySub { font-size: 12px; color: var(--text-secondary); }
+
+.filterBtn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all 0.15s;
+}
+
+.filterBtn:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+.filterBtn.active {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+
+.tableWrap {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.mapWrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-card);
+  margin-bottom: 16px;
+}
+
+.mapHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mapTitle { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+
+
+.mapLegend { display: flex; gap: 12px; font-size: 11px; color: var(--text-secondary); }
+
+.legendItem { display: inline-flex; align-items: center; gap: 6px; }
+
+.legendDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.legendSafe { background: var(--accent-green); }
+.legendWarn { background: var(--accent-yellow); }
+.legendBreach { background: var(--accent-red); }
+
+.map { height: 360px; width: 100%; position: relative; }
+
+.mapControls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+  z-index: 1000;
+}
+
+.mapControlBtn {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mapControlBtn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-light);
+}
+
+.mapMeta {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 1000;
+  background: rgba(13, 17, 23, 0.78);
+  color: #f8fafc;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.marker {
+  background: transparent;
+  border: none;
+}
+
+.markerDot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 2px solid rgba(13, 17, 23, 0.8);
+  box-shadow: 0 0 0 3px rgba(13, 17, 23, 0.4);
+}
+
+.markerSafe { background: var(--accent-green); }
+.markerWarn { background: var(--accent-yellow); }
+.markerBreach { background: var(--accent-red); }
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table thead tr {
+  border-bottom: 1px solid var(--border);
+}
+
+.table th {
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 13px 16px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.row:last-child td { border-bottom: none; }
+
+.row:hover td { background: var(--bg-hover); }
+
+.rowSub {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0;
+  margin-top: 4px;
+  transition: opacity 0.15s ease;
+}
+
+.row:hover .rowSub { opacity: 1; }
+
+.rowId {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.copyBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  width: 18px;
+  height: 18px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 0;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.copyBadge:hover {
+  color: var(--text-primary);
+  border-color: var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.copyIcon {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.toast {
+  position: sticky;
+  top: 10px;
+  z-index: 5;
+  align-self: flex-end;
+  display: inline-block;
+  margin-bottom: 8px;
+  background: rgba(13, 17, 23, 0.9);
+  color: #f8fafc;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.mono { font-family: var(--font-mono); font-size: 12px; }
+
+.formCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  max-width: 560px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.formGroup { display: flex; flex-direction: column; gap: 6px; }
+.formGroup.full { grid-column: 1/-1; }
+
+.formLabel { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
+
+.formInput, .formSelect {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+.formInput:focus, .formSelect:focus { border-color: var(--accent-blue); }
+
+.formActions { display: flex; gap: 10px; justify-content: flex-end; }

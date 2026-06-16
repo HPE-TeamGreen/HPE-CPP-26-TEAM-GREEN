@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simulator
+  namespace: apps
+spec:
+  selector:
+    matchLabels:
+      app: simulator
+  template:
+    metadata:
+      labels:
+        app: simulator
+    spec:
+      containers:
+        - name: simulator
+          image: tempsafe-simulator:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "simulator-2.py"]
+          env:
+            - name: KAFKA_BROKER
+              value: "kafka.data.svc.cluster.local:9092"
+            - name: SHIPMENT_API_URL
+              value: "http://shipment.apps.svc.cluster.local:8000/sensors/active"
+            - name: SHIPMENT_API_BASE_URL
+              value: "http://shipment.apps.svc.cluster.local:8000"
