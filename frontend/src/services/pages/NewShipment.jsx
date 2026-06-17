@@ -38,6 +38,24 @@ export default function NewShipment() {
       return;
     }
 
+    const minTempNum = Number(form.minTemp);
+    const maxTempNum = Number(form.maxTemp);
+
+    if (isNaN(minTempNum) || isNaN(maxTempNum)) {
+      setError('Temperature limits must be valid numbers.');
+      return;
+    }
+
+    if (minTempNum < -100 || minTempNum > 100 || maxTempNum < -100 || maxTempNum > 100) {
+      setError('Temperature limits must be between -100°C and 100°C.');
+      return;
+    }
+
+    if (maxTempNum <= minTempNum) {
+      setError('Max temperature limit must be greater than min temperature limit.');
+      return;
+    }
+
     try {
       setSaving(true);
       setError('');
@@ -46,8 +64,8 @@ export default function NewShipment() {
         origin: form.origin,
         destination: form.destination,
         product: form.product,
-        min_temp_limit: Number(form.minTemp),
-        max_temp_limit: Number(form.maxTemp),
+        min_temp_limit: minTempNum,
+        max_temp_limit: maxTempNum,
       });
 
       navigate('/shipments');

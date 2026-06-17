@@ -113,8 +113,8 @@ class ShipmentCreate(BaseModel):
     origin:         str   = Field(..., example="Mangaluru Warehouse")
     destination:    str   = Field(..., example="Bengaluru Hub")
     product:        str   = Field(default="Pharmaceutical", example="Vaccines")
-    min_temp_limit: float = Field(..., example=2.0, description="Min safe temp in °C")
-    max_temp_limit: float = Field(..., example=8.0, description="Max safe temp in °C")
+    min_temp_limit: float = Field(..., ge=-100.0, le=100.0, example=2.0, description="Min safe temp in °C")
+    max_temp_limit: float = Field(..., ge=-100.0, le=100.0, example=8.0, description="Max safe temp in °C")
 
     @field_validator("max_temp_limit")
     @classmethod
