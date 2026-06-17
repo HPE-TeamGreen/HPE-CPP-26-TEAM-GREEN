@@ -7,6 +7,7 @@ import random
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import requests
 
 import aiohttp
 from aiokafka import AIOKafkaProducer
@@ -71,12 +72,48 @@ DEFAULT_SENSOR_PROFILES = {
     "S-14": {"product": "Vaccines", "current_temp": 9.4, "lat": 28.6139, "lng": 77.2090},
 }
 
+def get_coordinates(city):
+    try:
+        url = "https://nominatim.openstreetmap.org/search"
+
+        params = {
+            "q": city,
+            "format": "json",
+            "limit": 1
+        }
+
+        response = requests.get(
+            url,
+            params=params,
+            headers={"User-Agent": "TempSafeSimulator"}
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+
+            if data:
+                return {
+                    "lat": float(data[0]["lat"]),
+                    "lng": float(data[0]["lon"])
+                }
+
+    except Exception as e:
+        logger.error("Error getting coordinates for %s: %s", city, e)
+
+    return None
 
 def build_default_profile(sensor_id: str, origin: str, destination: str, min_temp: float, max_temp: float) -> SensorContext:
     profile = DEFAULT_SENSOR_PROFILES.get(sensor_id, {})
     fallback_temp = round((min_temp + max_temp) / 2, 1)
     origin_coords = CITY_COORDS.get(origin)
+
+    if not origin_coords:
+        origin_coords = get_coordinates(origin)
+
     destination_coords = CITY_COORDS.get(destination)
+
+    if not destination_coords:
+        destination_coords = get_coordinates(destination)
 
     # Starting position: use origin city coords so the sensor visually departs from the origin.
     # Falls back to profile defaults, then destination coords if origin is unknown.

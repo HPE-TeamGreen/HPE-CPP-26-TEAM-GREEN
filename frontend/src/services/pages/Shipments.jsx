@@ -173,18 +173,34 @@ export default function Shipments() {
     }
   };
 
-  const handleStartTransit = async (id) => {
-    try {
-      setTransitioning(true);
-      await updateShipmentStatus(id, 'IN_TRANSIT');
-      showToast(`Shipment ${id} is now in transit!`);
-      await loadShipments();
-    } catch (err) {
-      showToast(err?.message || 'Failed to start transit');
-    } finally {
-      setTransitioning(false);
-    }
-  };
+  const handleStartTransit = async (shipment) => {
+  if (
+    !shipment.sensorId ||
+    shipment.sensorId === 'UNASSIGNED'
+  ) {
+    showToast('Please assign a sensor before starting transit');
+    return;
+  }
+
+  try {
+    setTransitioning(true);
+
+    await updateShipmentStatus(
+      shipment.id,
+      'IN_TRANSIT'
+    );
+
+    showToast(
+      `Shipment ${shipment.id} is now in transit!`
+    );
+
+    await loadShipments();
+  } catch (err) {
+    showToast(err?.message || 'Failed to start transit');
+  } finally {
+    setTransitioning(false);
+  }
+};
 
   return (
     <div className={styles.page}>
@@ -324,7 +340,7 @@ export default function Shipments() {
                         {s.status === 'CREATED' ? (
                           <Button
                             variant="primary"
-                            onClick={() => handleStartTransit(s.id)}
+                            onClick={() => {handleStartTransit(s)}}
                             disabled={transitioning}
                             style={{ padding: '4px 10px', fontSize: '11px', minHeight: 'auto' }}
                           >

@@ -74,6 +74,8 @@ export function AppProvider({ children }) {
       await Promise.all(inTransitRaw.map(async (s) => {
         try {
           const readings = await getLatestReadings(s.sensor_id, 1);
+          console.log("SENSOR", s.sensor_id);
+          console.log("READINGS", readings);
           if (readings && readings.length > 0) {
             latestTelemetryRef.current[s.sensor_id] = readings[0];
           }

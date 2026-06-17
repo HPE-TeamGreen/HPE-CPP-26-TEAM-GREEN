@@ -302,18 +302,26 @@ app.add_middleware(
 def health_check():
     return {"status": "ok", "service": "telemetry-microservice"}
 
-@app.get("/telemetry/latest", response_model=List[TelemetryReadingResponse], tags=["Telemetry"])
+@app.get("/telemetry/latest", response_model=List[TelemetryReadingResponse])
 async def get_latest_telemetry(sensor_id: str, limit: int = 10):
     async with app.state.pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT event_id, sensor_id, shipment_id, event_type, recorded_at,
-                   temperature, latitude, longitude, is_excursion, is_buffered
+            SELECT event_id, sensor_id, shipment_id, event_type,
+                   recorded_at, temperature, latitude, longitude,
+                   is_excursion, is_buffered
             FROM telemetry_readings
             WHERE sensor_id = $1
             ORDER BY recorded_at DESC
             LIMIT $2
         """, sensor_id, limit)
-        return [dict(r) for r in rows][::-1]
+
+        result = []
+        for r in rows:
+            item = dict(r)
+            item["event_id"] = str(item["event_id"])
+            result.append(item)
+
+        return result[::-1]
 
 @app.get("/telemetry/history", response_model=List[TelemetryReadingResponse], tags=["Telemetry"])
 async def get_telemetry_history(sensor_id: str = None, shipment_id: str = None, start_time: str = None, end_time: str = None):
@@ -345,7 +353,14 @@ async def list_alerts(acknowledged: bool = None):
     
     async with app.state.pool.acquire() as conn:
         rows = await conn.fetch(query, *params)
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            item = dict(r)
+            item["alert_id"] = str(item["alert_id"])
+            item["reading_event_id"] = str(item["reading_event_id"])
+            result.append(item)
+
+        return result
 
 @app.patch("/alerts/{alert_id}/acknowledge", response_model=AlertResponse, tags=["Alerts"])
 async def acknowledge_alert(alert_id: str):
@@ -374,7 +389,13 @@ async def list_excursions(status_filter: str = None):
     
     async with app.state.pool.acquire() as conn:
         rows = await conn.fetch(query, *params)
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            item = dict(r)
+            item["excursion_id"] = str(item["excursion_id"])
+            result.append(item)
+
+        return result
 
 @app.patch("/excursions/{excursion_id}/resolve", response_model=ExcursionResponse, tags=["Excursions"])
 async def resolve_excursion(excursion_id: str, payload: ExcursionResolve):

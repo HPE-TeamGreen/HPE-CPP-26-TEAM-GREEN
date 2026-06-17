@@ -251,12 +251,11 @@
 }
 
 .toast {
-  position: sticky;
-  top: 10px;
-  z-index: 5;
-  align-self: flex-end;
-  display: inline-block;
-  margin-bottom: 8px;
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+
   background: rgba(13, 17, 23, 0.9);
   color: #f8fafc;
   border-radius: 999px;
