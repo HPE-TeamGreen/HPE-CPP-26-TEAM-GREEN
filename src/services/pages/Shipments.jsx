@@ -77,12 +77,14 @@ function MapOverlays({ activeShipments }) {
 }
 
 export default function Shipments() {
-  const { shipments } = useApp();
+  const { shipments, advanceShipmentStatus, getNextStatus, can } = useApp();
   const navigate = useNavigate();
   const [filter, setFilter] = useState('ALL');
   const [query, setQuery] = useState('');
   const [toast, setToast] = useState('');
+  const [advancingId, setAdvancingId] = useState(null);
   const toastTimer = useRef(null);
+  const canAdvance = can('advanceShipment');
 
   const filtered = filter === 'ALL' ? shipments : shipments.filter(s => s.status === filter);
   const visible = filtered.filter(s => {
@@ -90,12 +92,13 @@ export default function Shipments() {
     const q = query.toLowerCase();
     return [
       s.id,
+      s.displayId,
       s.origin,
       s.destination,
       s.product,
       s.sensorId,
       s.status,
-    ].some(value => value.toLowerCase().includes(q));
+    ].filter(Boolean).some(value => value.toLowerCase().includes(q));
   });
   const activeShipments = shipments.filter(s => s.status === 'IN_TRANSIT');
   const mapShipments = activeShipments.filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lng));
@@ -163,6 +166,18 @@ export default function Shipments() {
     }
   };
 
+  const handleAdvance = async (shipmentId, displayId) => {
+    try {
+      setAdvancingId(shipmentId);
+      const updated = await advanceShipmentStatus(shipmentId);
+      showToast(`${displayId} moved to ${updated.status.replace('_', ' ')}`);
+    } catch (err) {
+      showToast(err?.message || 'Unable to advance status');
+    } finally {
+      setAdvancingId(null);
+    }
+  };
+
   return (
     <div className={styles.page}>
       <PageHeader
@@ -213,11 +228,11 @@ export default function Shipments() {
               return (
                 <Marker key={s.id} position={[s.lat, s.lng]} icon={markerIcons[ts]}>
                   <Tooltip direction="top" offset={[0, -8]} opacity={0.9}>
-                    {s.id}
+                    {s.displayId}
                   </Tooltip>
                   <Popup>
                     <div style={{ fontSize: 12, lineHeight: 1.4 }}>
-                      <div style={{ fontWeight: 600, marginBottom: 4 }}>{s.id}</div>
+                      <div style={{ fontWeight: 600, marginBottom: 4 }}>{s.displayId}</div>
                       <div>{s.origin} → {s.destination}</div>
                       <div>Product: {s.product}</div>
                       <div>Sensor: {s.sensorId}</div>
@@ -261,22 +276,24 @@ export default function Shipments() {
                 <tr>
                   <th>Shipment ID</th><th>Route</th><th>Product</th><th>Sensor</th>
                   <th>Current Temp</th><th>Limits</th><th>Status</th><th>Temp Status</th>
+                  {canAdvance && <th>Action</th>}
                 </tr>
               </thead>
               <tbody>
                 {visible.map(s => {
                   const ts = getTempStatus(s);
+                  const next = getNextStatus(s.status);
                   return (
                     <tr key={s.id} className={styles.row}>
                       <td>
                         <div className={styles.rowId}>
-                          <span className={styles.mono}>{s.id}</span>
+                          <span className={styles.mono}>{s.displayId}</span>
                           <button
                             type="button"
                             className={styles.copyBadge}
                             onClick={() => copyToClipboard(s.id)}
-                            title="Copy shipment ID"
-                            aria-label="Copy shipment ID"
+                            title="Copy shipment UUID"
+                            aria-label="Copy shipment UUID"
                           >
                             <svg className={styles.copyIcon} viewBox="0 0 24 24" aria-hidden="true">
                               <rect x="9" y="7" width="10" height="12" rx="2" />
@@ -297,6 +314,22 @@ export default function Shipments() {
                       <td><span className={styles.mono}>{s.minTemp}–{s.maxTemp}°C</span></td>
                       <td><StatusBadge status={s.status} /></td>
                       <td><StatusBadge status={ts} /></td>
+                      {canAdvance && (
+                        <td>
+                          {next ? (
+                            <Button
+                              variant="secondary"
+                              onClick={() => handleAdvance(s.id, s.displayId)}
+                              disabled={advancingId === s.id}
+                              style={{ fontSize: 11, padding: '4px 10px' }}
+                            >
+                              {advancingId === s.id ? 'Advancing...' : `→ ${next.replace('_', ' ')}`}
+                            </Button>
+                          ) : (
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Final</span>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

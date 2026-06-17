@@ -113,7 +113,7 @@ export default function Dashboard() {
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: tempColor[status] }} />
                   </div>
                   <div className={styles.shipInfo}>
-                    <div className={styles.shipId}>{s.id}</div>
+                    <div className={styles.shipId}>{s.displayId}</div>
                     <div className={styles.shipRoute}>{s.origin} → {s.destination} · {s.product}</div>
                   </div>
                   <div className={styles.shipTemp}>

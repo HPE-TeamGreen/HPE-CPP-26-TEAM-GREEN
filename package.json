@@ -2,6 +2,7 @@
   "name": "coldchain-monitor",
   "version": "1.0.0",
   "private": true,
+  "proxy": "http://localhost:8000",
   "dependencies": {
     "leaflet": "^1.9.4",
     "react": "^18.2.0",

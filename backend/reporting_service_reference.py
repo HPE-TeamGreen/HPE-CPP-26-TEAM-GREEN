@@ -38,6 +38,15 @@ app = FastAPI(
     version="1.0.0"
 )
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   # tighten to your frontend's exact origin in production
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # --------------------------------------------------
 # Database Pool
 # --------------------------------------------------

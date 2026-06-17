@@ -1,50 +1,53 @@
-import { mockApiRequest } from './mockApi';
+/**
+ * apiClient.js
+ *
+ * Two backends actually exist and are deployed:
+ *   shipment-1.py                  -> SHIPMENT_API_URL   (default :8000)
+ *   reporting_service_reference.py -> REPORTING_API_URL  (default :8002)
+ *
+ * alert.py and telemetry.py are Kafka consumers ONLY — they expose no HTTP
+ * endpoints. All alert/excursion/telemetry data that reaches the frontend
+ * comes through reporting_service_reference.py's /reports/* endpoints,
+ * which already read the `alerts` and `telemetry_readings` tables those
+ * two consumers write to.
+ *
+ * .env (Vite):
+ *   VITE_SHIPMENT_API_URL=http://localhost:8000
+ *   VITE_REPORTING_API_URL=http://localhost:8002
+ */
 
-const DEFAULT_BASE_URL = 'http://localhost:8000';
-const DEFAULT_REPORTING_URL = 'http://localhost:8001';
-const USE_MOCK_API = process.env.REACT_APP_USE_MOCK_API === 'true';
+const SHIPMENT_URL  = import.meta.env.VITE_SHIPMENT_API_URL  || 'http://localhost:8000';
+const REPORTING_URL = import.meta.env.VITE_REPORTING_API_URL || 'http://localhost:8002';
 
-const API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, '');
-const REPORTING_BASE_URL = (process.env.REACT_APP_REPORTING_API_URL || DEFAULT_REPORTING_URL).replace(/\/$/, '');
-
-async function doFetch(baseUrl, path, options = {}) {
-  const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
-  const headers = { ...(options.headers || {}) };
-
-  if (options.body && !headers['Content-Type']) {
-    headers['Content-Type'] = 'application/json';
+async function handleResponse(res) {
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
   }
-
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
-
-  const contentType = response.headers.get('content-type') || '';
-  const isJson = contentType.includes('application/json');
-  const data = isJson ? await response.json() : null;
-
-  if (!response.ok) {
-    const message = data?.detail || data?.message || `Request failed (${response.status})`;
-    const error = new Error(message);
-    error.status = response.status;
-    error.data = data;
-    throw error;
-  }
-
-  return data;
+  if (res.status === 204) return null;
+  return res.json();
 }
 
+/**
+ * Used by shipmentService.js — the only frontend service whose paths match
+ * an existing backend 1:1 (shipment-1.py).
+ */
 export async function apiFetch(path, options = {}) {
-  if (USE_MOCK_API) {
-    return mockApiRequest(path, options);
-  }
-  return doFetch(API_BASE_URL, path, options);
+  const res = await fetch(`${SHIPMENT_URL}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  return handleResponse(res);
 }
 
+/**
+ * Used by reportingService.js, and now also by alertService.js,
+ * excursionService.js, telemetryService.js (remapped — see those files).
+ */
 export async function reportingFetch(path, options = {}) {
-  if (USE_MOCK_API) {
-    return mockApiRequest(path, options);
-  }
-  return doFetch(REPORTING_BASE_URL, path, options);
+  const res = await fetch(`${REPORTING_URL}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  return handleResponse(res);
 }
