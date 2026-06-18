@@ -21,14 +21,14 @@ KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:9092")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "telemetry-events")
 SHIPMENT_API_URL = os.getenv("SHIPMENT_API_URL", "http://localhost:8000/sensors/active")
 SHIPMENT_API_BASE_URL = os.getenv("SHIPMENT_API_BASE_URL", "http://localhost:8000")
-POLL_INTERVAL_SECONDS = float(os.getenv("SIMULATOR_POLL_INTERVAL_SECONDS", "10"))
+POLL_INTERVAL_SECONDS = float(os.getenv("SIMULATOR_POLL_INTERVAL_SECONDS", "5"))
 REFRESH_INTERVAL_SECONDS = float(os.getenv("SIMULATOR_REFRESH_INTERVAL_SECONDS", "30"))
 BUFFER_LIMIT = int(os.getenv("SIMULATOR_BUFFER_LIMIT", "12"))
 ENABLE_NO_SIGNAL = os.getenv("SIMULATOR_ENABLE_NO_SIGNAL", "true").lower() == "true"
 
 # --- Geo-navigation settings ---
 # How many degrees of lat/lng the sensor moves per simulation tick toward destination.
-STEP_DEGREES = float(os.getenv("SIMULATOR_STEP_DEGREES", "1.0"))
+STEP_DEGREES = float(os.getenv("SIMULATOR_STEP_DEGREES", "0.08"))
 # If the sensor is within this many km of the destination, it is considered "arrived".
 ARRIVAL_THRESHOLD_KM = float(os.getenv("SIMULATOR_ARRIVAL_THRESHOLD_KM", "5.0"))
 
@@ -253,6 +253,15 @@ async def sensor_worker(sensor: SensorContext, producer: AIOKafkaProducer):
     local_buffer: list[dict] = []
     offline = False
     has_destination = dest_lat is not None and dest_lng is not None
+    # Randomly assign 50% of sensors to be "faulty" for demo purposes
+    is_faulty = random.random() < 0.5
+    state = "EXCURSION" if is_faulty else "NORMAL"
+    
+    # If starting in excursion, jump the temp immediately so it shows on the UI without waiting
+    if state == "EXCURSION":
+        current_temp = sensor.max_temp_limit + random.uniform(2.0, 5.0)
+        logger.warning("[%s] FAULTY SENSOR — starting in EXCURSION at %.2fC (max limit: %.2fC)",
+                       sensor.sensor_id, current_temp, sensor.max_temp_limit)
 
     if has_destination and latitude is not None and longitude is not None:
         total_km = haversine_distance_km(latitude, longitude, dest_lat, dest_lng)
@@ -263,19 +272,33 @@ async def sensor_worker(sensor: SensorContext, producer: AIOKafkaProducer):
 
     try:
         while True:
-            # --- Temperature simulation (unchanged) ---
-            state = "NORMAL"
+            # --- Probabilistic State Machine ---
             roll = random.random()
-            if ENABLE_NO_SIGNAL and roll < 0.05:
-                state = "NO_SIGNAL"
-            elif roll < 0.1:
-                state = "FRIDGE_BROKE"
+            if state == "NORMAL":
+                if ENABLE_NO_SIGNAL and roll < 0.05:
+                    state = "NO_SIGNAL"
+                elif is_faulty and roll < 0.4:  # 40% chance for faulty sensors to re-enter excursion
+                    state = "EXCURSION"
+                # Normal sensors never spontaneously enter an excursion (keeps them SAFE for the demo)
+            elif state == "EXCURSION":
+                recovery_chance = 0.02 if is_faulty else 0.1
+                if roll < recovery_chance:
+                    state = "NORMAL"
+            elif state == "NO_SIGNAL":
+                if roll < 0.2:  # 20% chance to recover
+                    state = "NORMAL"
 
-            if state == "FRIDGE_BROKE":
-                current_temp += random.uniform(1.4, 2.8)
-                logger.warning("[%s] Temperature spike to %.2fC", sensor.sensor_id, current_temp)
+            if state == "EXCURSION":
+                # Ensure the temperature stays above the max limit for the demo
+                if current_temp < sensor.max_temp_limit + 1.0:
+                    current_temp += random.uniform(1.0, 3.0)
+                else:
+                    current_temp += random.uniform(-0.5, 1.5)
+                logger.warning("[%s] EXCURSION state: Temp spiked to %.2fC", sensor.sensor_id, current_temp)
             else:
-                current_temp += random.uniform(-0.15, 0.15)
+                midpoint = (sensor.min_temp_limit + sensor.max_temp_limit) / 2
+                pull = (midpoint - current_temp) * 0.1
+                current_temp += pull + random.uniform(-0.2, 0.2)
 
             # --- GPS movement: directional toward destination ---
             if has_destination and latitude is not None and longitude is not None:
@@ -300,7 +323,7 @@ async def sensor_worker(sensor: SensorContext, producer: AIOKafkaProducer):
 
             payload = build_telemetry_payload(sensor, current_temp, latitude, longitude)
             event_type = CE_TYPE_ALERT_BREACH if (
-                current_temp < sensor.min_temp_limit or current_temp > sensor.max_temp_limit or state == "FRIDGE_BROKE"
+                current_temp < sensor.min_temp_limit or current_temp > sensor.max_temp_limit or state == "EXCURSION"
             ) else CE_TYPE_READING
 
             if state == "NO_SIGNAL":

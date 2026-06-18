@@ -13,7 +13,6 @@ export default function NewShipment() {
     origin: '',
     destination: '',
     product: '',
-    sensorId: '',
     minTemp: '',
     maxTemp: '',
   });

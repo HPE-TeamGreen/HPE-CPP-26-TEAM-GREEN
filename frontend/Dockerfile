@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Install dependencies first (layer caching)
 COPY package.json package-lock.json ./
-RUN npm ci --silent
+RUN --mount=type=cache,target=/root/.npm npm ci --silent
 
 # Copy source code
 COPY public/ public/
@@ -18,6 +18,8 @@ COPY src/ src/
 ENV REACT_APP_API_BASE_URL=/api
 ENV REACT_APP_TELEMETRY_API_URL=/api
 ENV REACT_APP_REPORTING_API_URL=/api
+ENV GENERATE_SOURCEMAP=false
+ENV NODE_OPTIONS="--max_old_space_size=4096"
 
 RUN npm run build
 

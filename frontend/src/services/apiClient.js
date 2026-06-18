@@ -27,7 +27,13 @@ async function doFetch(baseUrl, path, options = {}) {
   const data = isJson ? await response.json() : null;
 
   if (!response.ok) {
-    const message = data?.detail || data?.message || `Request failed (${response.status})`;
+    let message;
+    if (Array.isArray(data?.detail)) {
+      // FastAPI validation errors come as [{loc: [...], msg: "...", type: "..."}, ...]
+      message = data.detail.map(e => typeof e === 'object' ? (e.msg || JSON.stringify(e)) : e).join('; ');
+    } else {
+      message = data?.detail || data?.message || `Request failed (${response.status})`;
+    }
     const error = new Error(message);
     error.status = response.status;
     error.data = data;

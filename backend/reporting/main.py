@@ -382,8 +382,7 @@ async def get_compliance_summary():
 
         total_excursions = await conn.fetchval("""
             SELECT COUNT(*)
-            FROM telemetry_readings
-            WHERE is_excursion = TRUE
+            FROM excursion_events
         """)
 
         buffered_events = await conn.fetchval("""
@@ -393,24 +392,38 @@ async def get_compliance_summary():
         """)
 
         active_shipments = await conn.fetchval("""
-            SELECT COUNT(DISTINCT shipment_id)
-            FROM telemetry_readings
+            SELECT COUNT(*)
+            FROM shipments
+            WHERE status = 'IN_TRANSIT'
+        """)
+
+        total_delivered_shipments = await conn.fetchval("""
+            SELECT COUNT(*)
+            FROM shipments
+            WHERE status = 'DELIVERED'
+        """)
+
+        delivered_with_excursions = await conn.fetchval("""
+            SELECT COUNT(DISTINCT e.shipment_id)
+            FROM excursion_events e
+            JOIN shipments s ON e.shipment_id = s.shipment_id
+            WHERE s.status = 'DELIVERED'
         """)
 
     # ----------------------------------------------
-    # Compliance Percentage
+    # Compliance Percentage (Delivered Shipments)
     # ----------------------------------------------
 
-    if total_readings == 0:
+    if total_delivered_shipments == 0:
 
         compliance_percentage = 100
 
     else:
 
-        safe_readings = total_readings - total_excursions
+        compliant_shipments = total_delivered_shipments - delivered_with_excursions
 
         compliance_percentage = (
-            safe_readings / total_readings
+            compliant_shipments / total_delivered_shipments
         ) * 100
 
     # ----------------------------------------------

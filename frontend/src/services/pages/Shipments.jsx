@@ -86,7 +86,7 @@ function MapOverlays({ activeShipments }) {
 }
 
 export default function Shipments() {
-  const { shipments, loadShipments } = useApp();
+  const { shipments, loadShipments, excursions } = useApp();
   const navigate = useNavigate();
   const [filter, setFilter] = useState('ALL');
   const [query, setQuery] = useState('');
@@ -110,9 +110,24 @@ export default function Shipments() {
   const activeShipments = shipments.filter(s => s.status === 'IN_TRANSIT');
   const mapShipments = activeShipments.filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lng));
 
+  // Build a set of shipment IDs that have had excursions
+  const shipmentIdsWithExcursions = useMemo(() => {
+    const ids = new Set();
+    excursions.forEach(e => ids.add(e.shipmentId));
+    return ids;
+  }, [excursions]);
+
   const getTempStatus = (s) => {
-    if (s.currentTemp > s.maxTemp || s.currentTemp < s.minTemp) return 'BREACH';
-    if (s.currentTemp > s.maxTemp - 1) return 'WARN';
+    // For IN_TRANSIT shipments: check live telemetry
+    if (s.status === 'IN_TRANSIT') {
+      if (s.currentTemp > s.maxTemp || s.currentTemp < s.minTemp) return 'BREACH';
+      if (s.currentTemp > s.maxTemp - 1) return 'WARN';
+      // Even if current temp is OK, flag if there was a past excursion
+      if (shipmentIdsWithExcursions.has(s.id)) return 'WARN';
+      return 'SAFE';
+    }
+    // For DELIVERED/CREATED shipments: check excursion history
+    if (shipmentIdsWithExcursions.has(s.id)) return 'BREACH';
     return 'SAFE';
   };
 
@@ -298,7 +313,7 @@ export default function Shipments() {
             <table className={styles.table}>
               <thead>
                 <tr>
-                  <th>Shipment ID</th><th>Route</th><th>Product</th><th>Sensor</th>
+                  <th>Shipment ID</th><th>Route</th><th>Product</th>
                   <th>Current Temp</th><th>Limits</th><th>Status</th><th>Temp Status</th><th>Actions</th>
                 </tr>
               </thead>
@@ -327,7 +342,6 @@ export default function Shipments() {
                       </td>
                       <td>{s.origin} → {s.destination}</td>
                       <td>{s.product}</td>
-                      <td><span className={styles.mono}>{s.sensorId}</span></td>
                       <td>
                         <span style={{ color: tempColor[ts], fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
                           {s.currentTemp}°C

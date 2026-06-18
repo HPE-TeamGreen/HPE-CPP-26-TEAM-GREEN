@@ -118,7 +118,7 @@ async def setup_db(pool: asyncpg.Pool):
                 alert_id         UUID         PRIMARY KEY,
                 reading_event_id UUID         NOT NULL,
                 sensor_id        VARCHAR(50)  NOT NULL,
-                shipment_id      VARCHAR(100) NOT NULL,
+                shipment_id      VARCHAR(100) NOT NULL UNIQUE,
                 temperature      FLOAT        NOT NULL,
                 min_temp_limit   FLOAT        NOT NULL,
                 max_temp_limit   FLOAT        NOT NULL,
@@ -134,7 +134,7 @@ async def setup_db(pool: asyncpg.Pool):
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS excursion_events (
                 excursion_id    UUID         PRIMARY KEY,
-                shipment_id     VARCHAR(100) NOT NULL,
+                shipment_id     VARCHAR(100) NOT NULL UNIQUE,
                 sensor_id       VARCHAR(50)  NOT NULL,
                 breach_time     TIMESTAMPTZ  NOT NULL,
                 recorded_temp   FLOAT        NOT NULL,

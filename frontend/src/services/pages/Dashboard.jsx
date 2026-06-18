@@ -1,19 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 import { useApp } from '../../context/AppContext';
 import PageHeader from '../../components/layout/PageHeader';
 import StatusBadge from '../../components/layout/StatusBadge';
 import Button from '../../components/layout/Button';
-import { sensorTelemetry } from '../../data/mockData';
+// import { sensorTelemetry } from '../../data/mockData';
 import { getLatestReadings } from '../telemetryService';
+import { getComplianceReport } from '../reportingService';
 import styles from './Dashboard.module.css';
-
-const getTempStatus = (s) => {
-  if (s.currentTemp > s.maxTemp || s.currentTemp < s.minTemp) return 'breach';
-  if (s.currentTemp > s.maxTemp - 1) return 'warn';
-  return 'ok';
-};
 
 const tempColor = { ok: 'var(--accent-green)', warn: 'var(--accent-yellow)', breach: 'var(--accent-red)' };
 
@@ -23,8 +18,26 @@ export default function Dashboard() {
   
   const activeShipments = shipments.filter(s => s.status === 'IN_TRANSIT');
   const onlineSensorIds = activeShipments.map(s => s.sensorId).filter(id => id && id !== 'UNASSIGNED');
+
+  // Build a set of shipment IDs that have had excursions
+  const shipmentIdsWithExcursions = useMemo(() => {
+    const ids = new Set();
+    excursions.forEach(e => ids.add(e.shipmentId));
+    return ids;
+  }, [excursions]);
+
+  const getTempStatus = (s) => {
+    if (s.status === 'IN_TRANSIT') {
+      if (s.currentTemp > s.maxTemp || s.currentTemp < s.minTemp) return 'breach';
+      if (s.currentTemp > s.maxTemp - 1) return 'warn';
+      if (shipmentIdsWithExcursions.has(s.id)) return 'warn';
+      return 'ok';
+    }
+    if (shipmentIdsWithExcursions.has(s.id)) return 'breach';
+    return 'ok';
+  };
   
-  const [selectedSensor, setSelectedSensor] = useState(onlineSensorIds.length > 0 ? onlineSensorIds[0] : 'S-14');
+  const [selectedSensor, setSelectedSensor] = useState(onlineSensorIds.length > 0 ? onlineSensorIds[0] : '');
 
   useEffect(() => {
     if (onlineSensorIds.length > 0 && !onlineSensorIds.includes(selectedSensor)) {
@@ -43,11 +56,11 @@ export default function Dashboard() {
         if (!cancelled && Array.isArray(readings) && readings.length > 0) {
           // Find the shipment for this sensor to get real temp limits
           const shipment = activeShipments.find(s => s.sensorId === selectedSensor);
-          const mockFallback = sensorTelemetry[selectedSensor];
+          // const mockFallback = sensorTelemetry[selectedSensor];
           setLiveTelemetry({
-            shipmentId: readings[0].shipment_id || shipment?.id || mockFallback?.shipmentId || '',
-            minTemp: shipment?.minTemp ?? mockFallback?.minTemp ?? 2,
-            maxTemp: shipment?.maxTemp ?? mockFallback?.maxTemp ?? 8,
+            shipmentId: readings[0].shipment_id || shipment?.id || '',
+            minTemp: shipment?.minTemp ?? 2,
+            maxTemp: shipment?.maxTemp ?? 8,
             data: readings.map(r => ({
               time: new Date(r.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
               temp: r.temperature,
@@ -63,9 +76,37 @@ export default function Dashboard() {
     return () => { cancelled = true; clearInterval(intervalId); };
   }, [selectedSensor, shipments]);
 
-  const complianceRate = 94;
+  const [complianceStats, setComplianceStats] = useState(null);
 
-  const telemetry = liveTelemetry || sensorTelemetry[selectedSensor] || {
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCompliance = () => {
+      getComplianceReport()
+        .then(res => {
+          if (!cancelled && res && res.statistics) {
+            setComplianceStats(res.statistics);
+          }
+        })
+        .catch(() => {});
+    };
+    fetchCompliance();
+    const complianceInterval = setInterval(fetchCompliance, 10000); // refresh every 10s
+    return () => {
+      cancelled = true;
+      clearInterval(complianceInterval);
+    };
+  }, []);
+
+  const totalShipments = shipments.length;
+  const shipmentsWithExcursions = new Set(excursions.map(e => e.shipmentId)).size;
+  
+  const complianceRate = complianceStats
+    ? complianceStats.compliance_percentage
+    : (totalShipments > 0 
+        ? Math.round(((totalShipments - shipmentsWithExcursions) / totalShipments) * 100) 
+        : 100);
+
+  const telemetry = liveTelemetry || /* sensorTelemetry[selectedSensor] || */ {
     shipmentId: selectedSensor,
     minTemp: 2,
     maxTemp: 8,
@@ -196,9 +237,7 @@ export default function Dashboard() {
                     <option key={sid} value={sid}>{sid}</option>
                   ))
                 ) : (
-                  Object.keys(sensorTelemetry).map(sid => (
-                    <option key={sid} value={sid}>{sid}</option>
-                  ))
+                  <option value="">No active sensors</option>
                 )}
               </select>
             </div>

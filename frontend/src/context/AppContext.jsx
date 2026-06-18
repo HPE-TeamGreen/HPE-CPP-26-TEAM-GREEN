@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { shipments as mockShipments, sensors as mockSensors, alerts as initialAlerts, excursions as initialExcursions, users } from '../data/mockData';
+import { users } from '../data/mockData';
 import { hasPermission } from '../data/roles';
 import { createShipment as createShipmentApi, listShipments, registerSensor as registerSensorApi } from '../services/shipmentService';
 import { listAlerts as listAlertsApi, acknowledgeAlert as acknowledgeAlertApi, acknowledgeAllAlerts as acknowledgeAllAlertsApi } from '../services/alertService';
@@ -9,35 +9,37 @@ import { getLatestReadings } from '../services/telemetryService';
 const AppContext = createContext();
 
 export function AppProvider({ children }) {
-  const [shipments, setShipments] = useState(mockShipments);
+  const [shipments, setShipments] = useState([]);
   const [shipmentsLoading, setShipmentsLoading] = useState(false);
   const [shipmentsError, setShipmentsError] = useState('');
-  const [sensors, setSensors] = useState(mockSensors);
-  const [alerts, setAlerts] = useState(initialAlerts);
+  const [sensors, setSensors] = useState([]);
+  const [alerts, setAlerts] = useState([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
-  const [excursions, setExcursions] = useState(initialExcursions);
+  const [excursions, setExcursions] = useState([]);
   const [excursionsLoading, setExcursionsLoading] = useState(false);
   const [user, setUser] = useState(null); // null = not logged in
   const [isLiveAlerts, setIsLiveAlerts] = useState(false);
   const [isLiveExcursions, setIsLiveExcursions] = useState(false);
 
-  const mockById = useMemo(() => {
-    const map = new Map();
-    mockShipments.forEach(s => map.set(s.id, s));
-    return map;
-  }, []);
+  // const mockById = useMemo(() => {
+  //   const map = new Map();
+  //   mockShipments.forEach(s => map.set(s.id, s));
+  //   return map;
+  // }, []);
 
   // Keep a ref to latest telemetry so it survives across poll cycles
   const latestTelemetryRef = React.useRef({});
 
   const mapShipmentFromApi = (apiShipment) => {
-    const fallback = mockById.get(apiShipment.shipment_id);
-    const minTemp = apiShipment.min_temp_limit;
-    const maxTemp = apiShipment.max_temp_limit;
+    // const fallback = mockById.get(apiShipment.shipment_id);
+    const rawMin = apiShipment.min_temp_limit;
+    const rawMax = apiShipment.max_temp_limit;
+    const minTemp = Number.isFinite(rawMin) ? rawMin : 0;
+    const maxTemp = Number.isFinite(rawMax) ? rawMax : 0;
     const defaultTemp = Number.isFinite(minTemp) && Number.isFinite(maxTemp)
       ? Number(((minTemp + maxTemp) / 2).toFixed(1))
       : 0;
-    const sensorId = apiShipment.sensor_id || fallback?.sensorId || 'UNASSIGNED';
+    const sensorId = apiShipment.sensor_id || 'UNASSIGNED';
 
     // Use cached telemetry from last successful fetch if available
     const cached = latestTelemetryRef.current[sensorId];
@@ -46,14 +48,14 @@ export function AppProvider({ children }) {
       id: apiShipment.shipment_id,
       origin: apiShipment.origin,
       destination: apiShipment.destination,
-      product: apiShipment.product || fallback?.product || 'Unknown',
+      product: apiShipment.product || 'Unknown',
       status: apiShipment.status,
       sensorId,
       minTemp,
       maxTemp,
-      currentTemp: cached?.temperature ?? fallback?.currentTemp ?? defaultTemp,
-      lat: cached?.latitude ?? fallback?.lat ?? null,
-      lng: cached?.longitude ?? fallback?.lng ?? null,
+      currentTemp: cached?.temperature ?? defaultTemp,
+      lat: cached?.latitude ?? null,
+      lng: cached?.longitude ?? null,
       createdAt: apiShipment.created_at,
     };
   };
@@ -64,18 +66,17 @@ export function AppProvider({ children }) {
       setShipmentsError('');
       const data = await listShipments();
       
-      if (!Array.isArray(data) || data.length === 0) {
-        setShipments(mockShipments);
+      if (!Array.isArray(data)) {
+        setShipments([]);
         return;
       }
 
-      // First, fetch latest telemetry for all in-transit sensors and cache it
-      const inTransitRaw = data.filter(s => s.status === 'IN_TRANSIT' && s.sensor_id);
-      await Promise.all(inTransitRaw.map(async (s) => {
+      // Fetch latest telemetry for all shipments with sensors (not just IN_TRANSIT)
+      // so delivered shipments also show their actual last recorded temperature
+      const withSensors = data.filter(s => s.sensor_id);
+      await Promise.all(withSensors.map(async (s) => {
         try {
           const readings = await getLatestReadings(s.sensor_id, 1);
-          console.log("SENSOR", s.sensor_id);
-          console.log("READINGS", readings);
           if (readings && readings.length > 0) {
             latestTelemetryRef.current[s.sensor_id] = readings[0];
           }
@@ -89,7 +90,7 @@ export function AppProvider({ children }) {
       setShipments(normalized);
     } catch (err) {
       // Only fall back to mock if we have no shipments at all
-      setShipments(prev => prev.length > 0 ? prev : mockShipments);
+      setShipments(prev => prev.length > 0 ? prev : []);
       setShipmentsError(err?.message || 'Unable to load shipments');
     } finally {
       setShipmentsLoading(false);
@@ -138,15 +139,15 @@ export function AppProvider({ children }) {
     try {
       setAlertsLoading(true);
       const data = await listAlertsApi();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         setAlerts(data.map(mapAlertFromApi));
         setIsLiveAlerts(true);
       } else {
-        setAlerts(initialAlerts);
+        setAlerts([]);
         setIsLiveAlerts(false);
       }
     } catch (err) {
-      setAlerts(initialAlerts);
+      setAlerts([]);
       setIsLiveAlerts(false);
     } finally {
       setAlertsLoading(false);
@@ -169,15 +170,15 @@ export function AppProvider({ children }) {
     try {
       setExcursionsLoading(true);
       const data = await listExcursionsApi();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         setExcursions(data.map(mapExcursionFromApi));
         setIsLiveExcursions(true);
       } else {
-        setExcursions(initialExcursions);
+        setExcursions([]);
         setIsLiveExcursions(false);
       }
     } catch (err) {
-      setExcursions(initialExcursions);
+      setExcursions([]);
       setIsLiveExcursions(false);
     } finally {
       setExcursionsLoading(false);
