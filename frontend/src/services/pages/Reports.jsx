@@ -5,23 +5,25 @@ import Button from '../../components/layout/Button';
 import { useApp } from '../../context/AppContext';
 import styles from './Reports.module.css';
 
-const monthlyData = [
-  { month: 'Nov', shipments: 18, excursions: 2, compliance: 89 },
-  { month: 'Dec', shipments: 22, excursions: 4, compliance: 82 },
-  { month: 'Jan', shipments: 20, excursions: 1, compliance: 95 },
-  { month: 'Feb', shipments: 25, excursions: 3, compliance: 88 },
-  { month: 'Mar', shipments: 28, excursions: 2, compliance: 93 },
-  { month: 'Apr', shipments: 24, excursions: 3, compliance: 94 },
-];
 
-const productData = [
-  { product: 'Vaccines', avgTemp: 5.2, excursions: 2 },
-  { product: 'Insulin', avgTemp: 4.8, excursions: 0 },
-  { product: 'Blood', avgTemp: 3.9, excursions: 1 },
-  { product: 'Plasma', avgTemp: -17.5, excursions: 0 },
-  { product: 'Reagents', avgTemp: 3.2, excursions: 0 },
-  { product: 'Eye Drops', avgTemp: 18.2, excursions: 0 },
-];
+
+// const monthlyData = [
+//   { month: 'Nov', shipments: 18, excursions: 2, compliance: 89 },
+//   { month: 'Dec', shipments: 22, excursions: 4, compliance: 82 },
+//   { month: 'Jan', shipments: 20, excursions: 1, compliance: 95 },
+//   { month: 'Feb', shipments: 25, excursions: 3, compliance: 88 },
+//   { month: 'Mar', shipments: 28, excursions: 2, compliance: 93 },
+//   { month: 'Apr', shipments: 24, excursions: 3, compliance: 94 },
+// ];
+
+// const productData = [
+//   { product: 'Vaccines', avgTemp: 5.2, excursions: 2 },
+//   { product: 'Insulin', avgTemp: 4.8, excursions: 0 },
+//   { product: 'Blood', avgTemp: 3.9, excursions: 1 },
+//   { product: 'Plasma', avgTemp: -17.5, excursions: 0 },
+//   { product: 'Reagents', avgTemp: 3.2, excursions: 0 },
+//   { product: 'Eye Drops', avgTemp: 18.2, excursions: 0 },
+// ];
 
 const tooltipStyle = {
   contentStyle: { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 },
@@ -72,23 +74,49 @@ function CollapsibleChart({ title, badge, children }) {
 }
 
 export default function Reports() {
-  const { can } = useApp();
+  const { shipments, can } = useApp();
+
   const canExport = can('exportReport');
-  const [productQuery, setProductQuery] = useState('');
+
+  const [selectedShipment, setSelectedShipment] = useState('');
   const [complianceStats, setComplianceStats] = useState(null);
-
+  const [monthlyData, setMonthlyData] = useState([]);
+  const [productData, setProductData] = useState([]);
+  const [productQuery, setProductQuery] = useState('');
   useEffect(() => {
-    import('../reportingService').then(({ getComplianceReport }) => {
-      getComplianceReport()
-        .then(res => {
-          if (res && res.statistics) setComplianceStats(res.statistics);
-        })
-        .catch(() => {
-          // Fall back to mock if reporting service is unreachable
-        });
-    });
-  }, []);
+  import('../../services/reportingService').then(
+    ({
+      getComplianceReport,
+      getMonthlyCompliance,
+      getProductSummary,
+    }) => {
 
+      getComplianceReport()
+        .then((res) => {
+          if (res?.statistics) {
+            setComplianceStats(res.statistics);
+          }
+        })
+        .catch(console.error);
+
+      getMonthlyCompliance()
+        .then((res) => {
+          if (Array.isArray(res)) {
+            setMonthlyData(res);
+          }
+        })
+        .catch(console.error);
+
+      getProductSummary()
+        .then((res) => {
+          if (Array.isArray(res)) {
+            setProductData(res);
+          }
+        })
+        .catch(console.error);
+    }
+  );
+}, []);
   const visibleProducts = productData.filter(p => {
     if (!productQuery.trim()) return true;
     return p.product.toLowerCase().includes(productQuery.toLowerCase());
@@ -102,9 +130,10 @@ export default function Reports() {
       acc.compliance += row.compliance;
       return acc;
     }, { shipments: 0, excursions: 0, compliance: 0 });
-    const avgCompliance = monthlyData.length
-      ? (totals.compliance / monthlyData.length).toFixed(1)
-      : '0.0';
+    const avgCompliance =
+  complianceStats?.compliance_percentage?.toFixed?.(2) ??
+  complianceStats?.compliance_percentage ??
+  '0.0';
 
     const html = `
       <!doctype html>
@@ -147,9 +176,20 @@ export default function Reports() {
           </div>
 
           <div class="summary">
-            <div class="card"><div class="label">Total Shipments</div><div class="value">${totals.shipments}</div></div>
-            <div class="card"><div class="label">Total Excursions</div><div class="value">${totals.excursions}</div></div>
-            <div class="card"><div class="label">Avg Compliance</div><div class="value">${avgCompliance}%</div></div>
+            <div class="card">
+  <div class="label">Active Shipments</div>
+  <div class="value">${complianceStats?.active_shipments ?? 0}</div>
+</div>
+
+<div class="card">
+  <div class="label">Total Excursions</div>
+  <div class="value">${complianceStats?.total_excursions ?? 0}</div>
+</div>
+
+<div class="card">
+  <div class="label">Avg Compliance</div>
+  <div class="value">${avgCompliance}%</div>
+</div>
             <div class="card"><div class="label">Reporting Window</div><div class="value">6 months</div></div>
           </div>
 
@@ -217,6 +257,58 @@ export default function Reports() {
         subtitle="Analytics and compliance reporting"
       />
       <div className={styles.content}>
+
+  <div
+    style={{
+      marginBottom: '20px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+    }}
+  >
+    <label>Select Shipment:</label>
+
+    <select
+      value={selectedShipment}
+      onChange={(e) => setSelectedShipment(e.target.value)}
+      style={{
+        padding: '8px',
+        borderRadius: '6px',
+        border: '1px solid var(--border)',
+        background: 'var(--bg-card)',
+        color: 'var(--text-primary)',
+      }}
+    >
+      <option value="">Choose Shipment</option>
+
+      {shipments.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.id}
+        </option>
+      ))}
+    </select>
+  </div>
+
+  {selectedShipment && (
+    <div
+      className={styles.summaryCard}
+      style={{ marginBottom: '20px' }}
+    >
+      <h3>Shipment Report Preview</h3>
+
+      {shipments
+        .filter((s) => s.id === selectedShipment)
+        .map((s) => (
+          <div key={s.id}>
+            <p><strong>ID:</strong> {s.id}</p>
+            <p><strong>Product:</strong> {s.product}</p>
+            <p><strong>Status:</strong> {s.status}</p>
+            <p><strong>Route:</strong> {s.origin} → {s.destination}</p>
+            <p><strong>Sensor:</strong> {s.sensorId}</p>
+          </div>
+        ))}
+    </div>
+  )}
         {canExport && (
           <div className={styles.exportPanel}>
             <div className={styles.exportHeader}>
@@ -237,42 +329,137 @@ export default function Reports() {
           </div>
         )}
         <div className={styles.summaryCards}>
-          {[
-            { label: 'Active Shipments', value: complianceStats?.active_shipments ?? '137', color: 'var(--accent-blue)' },
-            { label: 'Total Excursions', value: complianceStats?.total_excursions ?? '15', color: 'var(--accent-red)' },
-            { label: 'Avg Compliance Rate', value: complianceStats ? `${complianceStats.compliance_percentage}%` : '90.2%', color: 'var(--accent-green)' },
-            { label: 'Total Readings', value: complianceStats?.total_readings ?? '22.5k', color: 'var(--text-secondary)' },
-          ].map(c => (
-            <div key={c.label} className={styles.summaryCard}>
-              <div className={styles.summaryLabel}>{c.label}</div>
-              <div className={styles.summaryValue} style={{ color: c.color }}>{c.value}</div>
-            </div>
-          ))}
-        </div>
+  {[
+    {
+      label: 'Active Shipments',
+      value: complianceStats?.active_shipments ?? 0,
+      color: 'var(--accent-blue)'
+    },
+    {
+      label: 'Total Excursions',
+      value: complianceStats?.total_excursions ?? 0,
+      color: 'var(--accent-red)'
+    },
+    {
+      label: 'Avg Compliance Rate',
+      value: `${complianceStats?.compliance_percentage ?? 0}%`,
+      color: 'var(--accent-green)'
+    },
+    {
+      label: 'Total Readings',
+      value: complianceStats?.total_readings ?? 0,
+      color: 'var(--text-secondary)'
+    },
+  ].map(c => (
+    <div key={c.label} className={styles.summaryCard}>
+      <div className={styles.summaryLabel}>{c.label}</div>
+      <div
+        className={styles.summaryValue}
+        style={{ color: c.color }}
+      >
+        {c.value}
+      </div>
+    </div>
+  ))}
+</div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <CollapsibleChart title="Monthly Compliance Rate" badge="Line Chart">
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={monthlyData} margin={{ top: 12, right: 8, bottom: 0, left: -20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                <YAxis domain={[75, 100]} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                <Tooltip {...tooltipStyle} formatter={v => [`${v}%`, 'Compliance']} />
-                <Line type="monotone" dataKey="compliance" stroke="var(--accent-green)" strokeWidth={2} dot={{ r: 3, fill: 'var(--accent-green)' }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </CollapsibleChart>
+  {monthlyData.length > 0 ? (
+    <ResponsiveContainer width="100%" height={200}>
+      <LineChart
+        data={monthlyData}
+        margin={{ top: 12, right: 8, bottom: 0, left: -20 }}
+      >
+        <CartesianGrid
+          strokeDasharray="3 3"
+          stroke="var(--border-light)"
+        />
+
+        <XAxis
+          dataKey="month"
+          tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+          axisLine={false}
+          tickLine={false}
+        />
+
+        <YAxis
+          tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+          axisLine={false}
+          tickLine={false}
+        />
+
+        <Tooltip
+          {...tooltipStyle}
+          formatter={(v) => [`${v}%`, 'Compliance']}
+        />
+
+        <Line
+          type="monotone"
+          dataKey="compliance"
+          stroke="var(--accent-green)"
+          strokeWidth={2}
+          dot={{ r: 3, fill: 'var(--accent-green)' }}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  ) : (
+    <div
+      style={{
+        padding: 20,
+        textAlign: 'center',
+        color: 'var(--text-muted)',
+      }}
+    >
+      No monthly compliance data available
+    </div>
+  )}
+</CollapsibleChart>
 
           <CollapsibleChart title="Excursions per Month" badge="Bar Chart">
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={monthlyData} margin={{ top: 12, right: 8, bottom: 0, left: -20 }}>
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                <Tooltip {...tooltipStyle} formatter={v => [v, 'Excursions']} />
-                <Bar dataKey="excursions" fill="var(--accent-red)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CollapsibleChart>
+  {monthlyData.length > 0 ? (
+    <ResponsiveContainer width="100%" height={200}>
+      <BarChart
+        data={monthlyData}
+        margin={{ top: 12, right: 8, bottom: 0, left: -20 }}
+      >
+        <XAxis
+          dataKey="month"
+          tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+          axisLine={false}
+          tickLine={false}
+        />
+
+        <YAxis
+          tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+          axisLine={false}
+          tickLine={false}
+        />
+
+        <Tooltip
+          {...tooltipStyle}
+          formatter={(v) => [v, 'Excursions']}
+        />
+
+        <Bar
+          dataKey="excursions"
+          fill="var(--accent-red)"
+          radius={[4, 4, 0, 0]}
+        />
+      </BarChart>
+    </ResponsiveContainer>
+  ) : (
+    <div
+      style={{
+        padding: 20,
+        textAlign: 'center',
+        color: 'var(--text-muted)',
+      }}
+    >
+      No excursion data available
+    </div>
+  )}
+</CollapsibleChart>
 
           <div style={{ border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg-card)', overflow: 'hidden' }}>
             <div className={styles.productHeader}>
@@ -287,12 +474,16 @@ export default function Reports() {
             </div>
             <div style={{ padding: '0 16px 16px' }}>
               {visibleProducts.length === 0 ? (
-                <div className={styles.emptyState}>
-                  <div className={styles.emptyTitle}>No products found.</div>
-                  <div className={styles.emptySub}>Try a different search term.</div>
-                  <Button variant="ghost" onClick={() => setProductQuery('')}>Clear search</Button>
-                </div>
-              ) : (
+  <div
+    style={{
+      padding: 20,
+      textAlign: 'center',
+      color: 'var(--text-muted)',
+    }}
+  >
+    No product summary data available
+  </div>
+) : (
                 <table className={styles.table}>
                   <thead>
                     <tr>

@@ -458,3 +458,91 @@ async def get_compliance_summary():
                 round(compliance_percentage, 2)
         }
     }
+
+@app.get("/reports/monthly-compliance")
+async def get_monthly_compliance():
+
+    async with db_pool.acquire() as conn:
+
+        rows = await conn.fetch("""
+            SELECT
+                TO_CHAR(created_at, 'Mon') AS month,
+                COUNT(*) AS shipments
+            FROM shipments
+            GROUP BY TO_CHAR(created_at, 'Mon')
+            ORDER BY MIN(created_at)
+        """)
+
+        excursion_rows = await conn.fetch("""
+            SELECT
+                TO_CHAR(breach_time, 'Mon') AS month,
+                COUNT(DISTINCT shipment_id) AS excursions
+            FROM excursion_events
+            GROUP BY TO_CHAR(breach_time, 'Mon')
+        """)
+
+    excursion_map = {
+        row["month"]: row["excursions"]
+        for row in excursion_rows
+    }
+
+    result = []
+
+    for row in rows:
+
+        month = row["month"]
+
+        shipments = int(row["shipments"])
+
+        excursions = int(excursion_map.get(month, 0))
+
+        compliance = max(
+        0,
+        round(
+            ((shipments - min(excursions, shipments)) / shipments) * 100,
+            2
+        )
+    ) if shipments > 0 else 100
+
+        result.append({
+        "month": month,
+        "shipments": shipments,
+        "excursions": excursions,
+        "compliance": compliance
+    })
+
+    return result
+
+@app.get("/reports/product-summary")
+async def get_product_summary():
+
+    async with db_pool.acquire() as conn:
+
+        rows = await conn.fetch("""
+            SELECT
+                s.product,
+                ROUND(AVG(t.temperature)::numeric, 2) AS avg_temp,
+                COUNT(
+                    CASE
+                        WHEN t.is_excursion = TRUE
+                        THEN 1
+                    END
+                ) AS excursions
+            FROM shipments s
+            LEFT JOIN telemetry_readings t
+                ON s.shipment_id = t.shipment_id
+            GROUP BY s.product
+            ORDER BY s.product
+        """)
+
+    result = []
+
+    for row in rows:
+
+        result.append({
+            "product": row["product"],
+            "avgTemp": float(row["avg_temp"] or 0),
+            "excursions": row["excursions"]
+        })
+
+    return result

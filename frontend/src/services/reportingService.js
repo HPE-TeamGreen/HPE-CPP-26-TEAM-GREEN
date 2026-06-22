@@ -32,3 +32,16 @@ export async function getExcursionSummary({ shipmentId, sensorId, page, pageSize
 export async function getComplianceReport() {
   return reportingFetch(`/reports/compliance-summary`);
 }
+/**
+ * Fetch monthly compliance report.
+ */
+export async function getMonthlyCompliance() {
+  return reportingFetch('/reports/monthly-compliance');
+}
+
+/**
+ * Fetch product summary report.
+ */
+export async function getProductSummary() {
+  return reportingFetch('/reports/product-summary');
+}
