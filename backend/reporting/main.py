@@ -513,6 +513,104 @@ async def get_monthly_compliance():
 
     return result
 
+# --------------------------------------------------
+# 4. Sensor Delivery Report
+# --------------------------------------------------
+
+@app.get("/reports/sensor/{sensor_id}/delivery-report")
+async def get_sensor_delivery_report(sensor_id: str):
+    start = time.time()
+    sensor_id = sanitize_id(sensor_id)
+    
+    async with db_pool.acquire() as conn:
+        shipment_data = await conn.fetchrow("""
+            SELECT s.shipment_id, s.origin, s.destination, s.status, s.product, s.min_temp_limit, s.max_temp_limit
+            FROM sensors sn
+            JOIN shipments s ON sn.shipment_id = s.shipment_id
+            WHERE sn.sensor_id = $1
+        """, sensor_id)
+        
+        if not shipment_data:
+            raise HTTPException(status_code=404, detail="Sensor not found")
+        
+        if shipment_data["status"] != "DELIVERED":
+            raise HTTPException(status_code=400, detail="Report only available for delivered sensors")
+            
+        shipment_id = shipment_data["shipment_id"]
+        
+        readings = await conn.fetch("""
+            SELECT temperature, recorded_at, is_excursion
+            FROM telemetry_readings
+            WHERE sensor_id = $1
+            ORDER BY recorded_at ASC
+        """, sensor_id)
+        
+        excursions = await conn.fetch("""
+            SELECT temperature, min_temp_limit, max_temp_limit, recorded_at
+            FROM alerts
+            WHERE sensor_id = $1
+            ORDER BY recorded_at ASC
+        """, sensor_id)
+        
+    if not readings:
+        raise HTTPException(status_code=404, detail="No telemetry data found for this sensor")
+        
+    temps = [r["temperature"] for r in readings]
+    min_temp = min(temps)
+    max_temp = max(temps)
+    avg_temp = sum(temps) / len(temps)
+    
+    start_time = readings[0]["recorded_at"]
+    end_time = readings[-1]["recorded_at"]
+    duration = (end_time - start_time).total_seconds()
+    
+    excursion_list = []
+    for exc in excursions:
+        deviation = 0
+        if exc["temperature"] < exc["min_temp_limit"]:
+            deviation = exc["min_temp_limit"] - exc["temperature"]
+        elif exc["temperature"] > exc["max_temp_limit"]:
+            deviation = exc["temperature"] - exc["max_temp_limit"]
+            
+        severity = "MINOR" if deviation < 5 else "MAJOR" if deviation < 10 else "CRITICAL"
+        
+        excursion_list.append({
+            "temperature": exc["temperature"],
+            "deviation": round(deviation, 2),
+            "severity": severity,
+            "recorded_at": str(exc["recorded_at"])
+        })
+
+    telemetry_list = [{
+        "temperature": r["temperature"],
+        "recorded_at": str(r["recorded_at"]),
+        "is_excursion": r["is_excursion"]
+    } for r in readings]
+
+    duration_ms = round((time.time() - start) * 1000, 2)
+    logger.info(f"[sensor-delivery-report] sensor_id={sensor_id} duration={duration_ms}ms")
+
+    return {
+        "sensor_id": sensor_id,
+        "shipment_id": shipment_id,
+        "origin": shipment_data["origin"],
+        "destination": shipment_data["destination"],
+        "product": shipment_data["product"],
+        "min_temp_limit": shipment_data["min_temp_limit"],
+        "max_temp_limit": shipment_data["max_temp_limit"],
+        "journey_start": str(start_time),
+        "journey_end": str(end_time),
+        "duration_hours": round(duration / 3600, 2),
+        "analytics": {
+            "min_temp": min_temp,
+            "max_temp": max_temp,
+            "avg_temp": round(avg_temp, 2),
+            "total_excursions": len(excursions)
+        },
+        "excursions": excursion_list,
+        "telemetry": telemetry_list
+    }
+
 @app.get("/reports/product-summary")
 async def get_product_summary():
 

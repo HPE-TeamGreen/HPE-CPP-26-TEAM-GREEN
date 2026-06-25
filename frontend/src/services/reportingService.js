@@ -45,3 +45,10 @@ export async function getMonthlyCompliance() {
 export async function getProductSummary() {
   return reportingFetch('/reports/product-summary');
 }
+
+/**
+ * Fetch sensor delivery report.
+ */
+export async function getSensorDeliveryReport(sensorId) {
+  return reportingFetch(`/reports/sensor/${sensorId}/delivery-report`);
+}

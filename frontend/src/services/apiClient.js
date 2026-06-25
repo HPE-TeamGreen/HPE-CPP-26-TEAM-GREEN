@@ -3,7 +3,7 @@ import { mockApiRequest } from './mockApi';
 const DEFAULT_BASE_URL = 'http://localhost:8000';
 const DEFAULT_TELEMETRY_URL = 'http://localhost:8001';
 const DEFAULT_REPORTING_URL = 'http://localhost:8002';
-const USE_MOCK_API = process.env.REACT_APP_USE_MOCK_API === 'true';
+const USE_MOCK_API = false;
 
 const API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, '');
 const TELEMETRY_BASE_URL = (process.env.REACT_APP_TELEMETRY_API_URL || DEFAULT_TELEMETRY_URL).replace(/\/$/, '');
