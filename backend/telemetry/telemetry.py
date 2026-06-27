@@ -166,7 +166,18 @@ async def process_batch(batch, pool: asyncpg.Pool, consumer: AIOKafkaConsumer):
         if info is None:
             await refresh_cache()
             info = _sensor_cache.get(sensor_id)
-        if info is None:
+            
+        # Fallback to payload data if sensor was just delivered and dropped from active cache
+        if info is None and "shipment_id" in data:
+            info = {
+                "shipment_id": data.get("shipment_id"),
+                "min_temp_limit": data.get("min_temp_limit"),
+                "max_temp_limit": data.get("max_temp_limit"),
+                "origin": data.get("origin"),
+                "destination": data.get("destination")
+            }
+
+        if info is None or info.get("shipment_id") is None:
             logger.warning(f"Unknown sensor {sensor_id} — skipping.")
             continue
 

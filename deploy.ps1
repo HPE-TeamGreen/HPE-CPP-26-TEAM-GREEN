@@ -39,7 +39,7 @@ Write-Host "  -> Building tempsafe-simulator..."
 docker build -t tempsafe-simulator:latest ./backend/simulator/
 
 Write-Host "  -> Building tempsafe-reporting..."
-docker build -t tempsafe-reporting:latest ./backend/reporting/
+docker build --no-cache -t tempsafe-reporting:latest ./backend/reporting/
 
 Write-Host "  -> Building tempsafe-frontend..."
 docker build -t tempsafe-frontend:latest ./frontend/

@@ -21,10 +21,19 @@ KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:9092")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "telemetry-events")
 SHIPMENT_API_URL = os.getenv("SHIPMENT_API_URL", "http://localhost:8000/sensors/active")
 SHIPMENT_API_BASE_URL = os.getenv("SHIPMENT_API_BASE_URL", "http://localhost:8000")
-POLL_INTERVAL_SECONDS = float(os.getenv("SIMULATOR_POLL_INTERVAL_SECONDS", "5"))
+POLL_INTERVAL_SECONDS = float(os.getenv("SIMULATOR_POLL_INTERVAL_SECONDS", "8"))
 REFRESH_INTERVAL_SECONDS = float(os.getenv("SIMULATOR_REFRESH_INTERVAL_SECONDS", "30"))
 BUFFER_LIMIT = int(os.getenv("SIMULATOR_BUFFER_LIMIT", "12"))
 ENABLE_NO_SIGNAL = os.getenv("SIMULATOR_ENABLE_NO_SIGNAL", "true").lower() == "true"
+
+# --- Tick-count constants (auto-scaled to poll interval) ---
+# These define real-world durations that remain consistent regardless of tick rate:
+#   Excursion duration  : 2 – 4 minutes
+#   Safe cooldown period: 6 – 10 minutes
+_EXCURSION_MIN_TICKS = max(3, int(120 / POLL_INTERVAL_SECONDS))   # 2 min minimum
+_EXCURSION_MAX_TICKS = max(5, int(240 / POLL_INTERVAL_SECONDS))   # 4 min maximum
+_COOLDOWN_MIN_TICKS  = max(5, int(360 / POLL_INTERVAL_SECONDS))   # 6 min minimum
+_COOLDOWN_MAX_TICKS  = max(8, int(600 / POLL_INTERVAL_SECONDS))   # 10 min maximum
 
 # --- Geo-navigation settings ---
 # How many degrees of lat/lng the sensor moves per simulation tick toward destination.
@@ -173,14 +182,21 @@ async def fetch_active_sensor_contexts(session: aiohttp.ClientSession) -> list[S
         return []
 
 
-def build_cloud_event(event_type: str, sensor: SensorContext, data: dict) -> dict:
+def build_cloud_event(event_type: str, sensor: SensorContext, data: dict, override_time: str = None) -> dict:
+    """
+    Build a CloudEvent envelope.
+    Pass override_time when publishing buffered (offline) readings so they
+    retain their original creation timestamp rather than the flush time.
+    Without this, all buffered readings would share the same recorded_at
+    in the database, causing duplicate timestamp entries in reports.
+    """
     return {
         "specversion": "1.0",
         "id": str(uuid.uuid4()),
         "source": f"urn:sensor:{sensor.sensor_id}",
         "type": event_type,
         "datacontenttype": "application/json",
-        "time": datetime.now(timezone.utc).isoformat(),
+        "time": override_time or datetime.now(timezone.utc).isoformat(),
         "data": data,
     }
 
@@ -237,8 +253,14 @@ async def mark_shipment_delivered(session: aiohttp.ClientSession, shipment_id: s
         return False
 
 
-async def publish(producer: AIOKafkaProducer, event_type: str, sensor: SensorContext, data: dict):
-    event = build_cloud_event(event_type, sensor, data)
+async def publish(
+    producer: AIOKafkaProducer,
+    event_type: str,
+    sensor: SensorContext,
+    data: dict,
+    override_time: str = None,
+):
+    event = build_cloud_event(event_type, sensor, data, override_time=override_time)
     await producer.send_and_wait(KAFKA_TOPIC, json.dumps(event).encode("utf-8"))
 
 
@@ -253,15 +275,47 @@ async def sensor_worker(sensor: SensorContext, producer: AIOKafkaProducer):
     local_buffer: list[dict] = []
     offline = False
     has_destination = dest_lat is not None and dest_lng is not None
-    # Randomly assign 50% of sensors to be "faulty" for demo purposes
-    is_faulty = random.random() < 0.5
-    state = "EXCURSION" if is_faulty else "NORMAL"
     
-    # If starting in excursion, jump the temp immediately so it shows on the UI without waiting
-    if state == "EXCURSION":
-        current_temp = sensor.max_temp_limit + random.uniform(2.0, 5.0)
-        logger.warning("[%s] FAULTY SENSOR — starting in EXCURSION at %.2fC (max limit: %.2fC)",
-                       sensor.sensor_id, current_temp, sensor.max_temp_limit)
+    # Calculate a dynamic step size to guarantee the journey takes 1 to 3 minutes
+    dynamic_step_degrees = STEP_DEGREES
+    if has_destination and latitude is not None and longitude is not None:
+        target_mins = random.uniform(1.0, 3.0)
+        target_ticks = max(1, int((target_mins * 60) / POLL_INTERVAL_SECONDS))
+        d_lat_total = dest_lat - latitude
+        d_lng_total = dest_lng - longitude
+        total_coord_dist = math.sqrt(d_lat_total ** 2 + d_lng_total ** 2)
+        dynamic_step_degrees = total_coord_dist / target_ticks
+        
+        total_km = haversine_distance_km(latitude, longitude, dest_lat, dest_lng)
+        logger.info("[%s] Navigating %.1f km (target time: %.1f mins, %d ticks).",
+                    sensor.sensor_id, total_km, target_mins, target_ticks)
+    else:
+        logger.warning("[%s] No valid destination coords — falling back to random walk", sensor.sensor_id)
+
+    # Randomly assign ~40% of sensors to be "faulty" for demo realism
+    is_faulty = random.random() < 0.4
+    
+    # --- Deterministic State Machine Counters ---
+    # States: NORMAL, EXCURSION, RECOVERY, SAFE_COOLDOWN
+    # "RECOVERY" is a new intermediate phase: excursion just ended, actively pulling
+    # temp back into safe range. "SAFE_COOLDOWN" is a mandatory quiet period after
+    # recovery so the sensor must fully stabilize before any new excursion can trigger.
+    state = "NORMAL"
+    excursion_direction = "HIGH"
+    excursion_ticks_remaining = 0     # How many more ticks the current excursion will last
+    safe_cooldown_ticks_remaining = 0 # How many ticks the sensor must stay calm after recovery
+
+    # Faulty sensors: kick off immediately in excursion on first cycle
+    if is_faulty:
+        excursion_direction = random.choice(["HIGH", "LOW"])
+        excursion_ticks_remaining = random.randint(_EXCURSION_MIN_TICKS, _EXCURSION_MAX_TICKS)
+        state = "EXCURSION"
+        if excursion_direction == "HIGH":
+            current_temp = sensor.max_temp_limit + random.uniform(2.0, 5.0)
+            logger.warning("[%s] FAULTY — starting EXCURSION HIGH at %.2fC", sensor.sensor_id, current_temp)
+        else:
+            current_temp = sensor.min_temp_limit - random.uniform(2.0, 5.0)
+            logger.warning("[%s] FAULTY — starting EXCURSION LOW at %.2fC", sensor.sensor_id, current_temp)
 
     if has_destination and latitude is not None and longitude is not None:
         total_km = haversine_distance_km(latitude, longitude, dest_lat, dest_lng)
@@ -272,33 +326,86 @@ async def sensor_worker(sensor: SensorContext, producer: AIOKafkaProducer):
 
     try:
         while True:
-            # --- Probabilistic State Machine ---
-            roll = random.random()
-            if state == "NORMAL":
-                if ENABLE_NO_SIGNAL and roll < 0.05:
-                    state = "NO_SIGNAL"
-                elif is_faulty and roll < 0.4:  # 40% chance for faulty sensors to re-enter excursion
-                    state = "EXCURSION"
-                # Normal sensors never spontaneously enter an excursion (keeps them SAFE for the demo)
-            elif state == "EXCURSION":
-                recovery_chance = 0.02 if is_faulty else 0.1
-                if roll < recovery_chance:
+            # ---------------------------------------------------------------
+            # Deterministic State Machine — guaranteed excursion lifecycle:
+            #   NORMAL → [trigger] → EXCURSION (12-20 ticks)
+            #          → RECOVERY (until temp inside limits + 10 safe ticks)
+            #          → SAFE_COOLDOWN (20-30 ticks of quiet)
+            #          → NORMAL → (repeat if faulty)
+            # ---------------------------------------------------------------
+            if state == "EXCURSION":
+                excursion_ticks_remaining -= 1
+                if excursion_ticks_remaining <= 0:
+                    # Excursion has lasted long enough — force recovery
+                    state = "RECOVERY"
+                    logger.info("[%s] Excursion ended. Entering RECOVERY phase.", sensor.sensor_id)
+
+            elif state == "RECOVERY":
+                midpoint = (sensor.min_temp_limit + sensor.max_temp_limit) / 2
+                is_safe = sensor.min_temp_limit <= current_temp <= sensor.max_temp_limit
+                if is_safe:
+                    # Temperature is safely inside limits — begin mandatory cooldown
+                    state = "SAFE_COOLDOWN"
+                    safe_cooldown_ticks_remaining = random.randint(_COOLDOWN_MIN_TICKS, _COOLDOWN_MAX_TICKS)
+                    logger.info("[%s] Temp back in range (%.2fC). Entering SAFE_COOLDOWN for %d ticks.",
+                                sensor.sensor_id, current_temp, safe_cooldown_ticks_remaining)
+
+            elif state == "SAFE_COOLDOWN":
+                safe_cooldown_ticks_remaining -= 1
+                if safe_cooldown_ticks_remaining <= 0:
+                    # Cooldown complete — transition to normal operation
                     state = "NORMAL"
+                    logger.info("[%s] Cooldown complete. Resuming NORMAL.", sensor.sensor_id)
+
+            elif state == "NORMAL":
+                # Faulty sensors can trigger a new excursion with low probability
+                if is_faulty and random.random() < 0.04:
+                    excursion_direction = random.choice(["HIGH", "LOW"])
+                    excursion_ticks_remaining = random.randint(_EXCURSION_MIN_TICKS, _EXCURSION_MAX_TICKS)
+                    state = "EXCURSION"
+                    logger.warning("[%s] Triggering new EXCURSION (%s) for %d ticks.",
+                                   sensor.sensor_id, excursion_direction, excursion_ticks_remaining)
+                elif ENABLE_NO_SIGNAL and random.random() < 0.01:  # 1% per tick — avg ~33 min between drops at 20s/tick
+                    state = "NO_SIGNAL"
+
             elif state == "NO_SIGNAL":
-                if roll < 0.2:  # 20% chance to recover
+                if random.random() < 0.25:
                     state = "NORMAL"
 
+            # ---------------------------------------------------------------
+            # Temperature physics per state
+            # ---------------------------------------------------------------
             if state == "EXCURSION":
-                # Ensure the temperature stays above the max limit for the demo
-                if current_temp < sensor.max_temp_limit + 1.0:
-                    current_temp += random.uniform(1.0, 3.0)
-                else:
-                    current_temp += random.uniform(-0.5, 1.5)
-                logger.warning("[%s] EXCURSION state: Temp spiked to %.2fC", sensor.sensor_id, current_temp)
-            else:
+                # Push temperature out of bounds in the chosen direction
+                if excursion_direction == "HIGH":
+                    if current_temp < sensor.max_temp_limit + 2.0:
+                        current_temp += random.uniform(0.5, 2.0)   # Rising phase
+                    else:
+                        current_temp += random.uniform(-0.3, 0.8)  # Plateau jitter near peak
+                else:  # LOW
+                    if current_temp > sensor.min_temp_limit - 2.0:
+                        current_temp -= random.uniform(0.5, 2.0)   # Dropping phase
+                    else:
+                        current_temp -= random.uniform(-0.3, 0.8)  # Plateau jitter near floor
+                logger.warning("[%s] EXCURSION (%s): %.2fC [%d ticks left]",
+                               sensor.sensor_id, excursion_direction, current_temp, excursion_ticks_remaining)
+
+            elif state == "RECOVERY":
+                # Strong pull toward midpoint — guaranteed to bring temp inside limits
                 midpoint = (sensor.min_temp_limit + sensor.max_temp_limit) / 2
-                pull = (midpoint - current_temp) * 0.1
-                current_temp += pull + random.uniform(-0.2, 0.2)
+                pull = (midpoint - current_temp) * 0.35
+                current_temp += pull + random.uniform(-0.1, 0.1)
+                logger.info("[%s] RECOVERY: pulling temp toward %.2fC (currently %.2fC)",
+                            sensor.sensor_id, midpoint, current_temp)
+
+            else:
+                # NORMAL or SAFE_COOLDOWN: gentle mean-reversion within safe limits
+                midpoint = (sensor.min_temp_limit + sensor.max_temp_limit) / 2
+                pull = (midpoint - current_temp) * 0.15
+                current_temp += pull + random.uniform(-0.15, 0.15)
+                # Hard clamp: never let random drift push into breach while in calm states
+                current_temp = max(sensor.min_temp_limit + 0.1, min(sensor.max_temp_limit - 0.1, current_temp))
+
 
             # --- GPS movement: directional toward destination ---
             if has_destination and latitude is not None and longitude is not None:
@@ -308,7 +415,7 @@ async def sensor_worker(sensor: SensorContext, producer: AIOKafkaProducer):
 
                 if coord_dist > 0:
                     # Clamp step so we don't overshoot the destination
-                    step = min(STEP_DEGREES, coord_dist)
+                    step = min(dynamic_step_degrees, coord_dist)
                     # Unit vector toward destination
                     u_lat = d_lat / coord_dist
                     u_lng = d_lng / coord_dist
@@ -337,7 +444,12 @@ async def sensor_worker(sensor: SensorContext, producer: AIOKafkaProducer):
                 if offline:
                     logger.info("[%s] Signal restored, flushing %d buffered readings", sensor.sensor_id, len(local_buffer))
                     for buffered_payload in local_buffer:
-                        await publish(producer, CE_TYPE_BUFFERED, sensor, buffered_payload)
+                        # Pass the original creation timestamp so each buffered reading
+                        # gets its real recorded_at, not the flush time.
+                        await publish(
+                            producer, CE_TYPE_BUFFERED, sensor, buffered_payload,
+                            override_time=buffered_payload["timestamp"],
+                        )
                     local_buffer.clear()
                     offline = False
 
@@ -366,7 +478,10 @@ async def sensor_worker(sensor: SensorContext, producer: AIOKafkaProducer):
         logger.info("[%s] Worker shutting down", sensor.sensor_id)
         if local_buffer:
             for buffered_payload in local_buffer:
-                await publish(producer, CE_TYPE_BUFFERED, sensor, buffered_payload)
+                await publish(
+                    producer, CE_TYPE_BUFFERED, sensor, buffered_payload,
+                    override_time=buffered_payload["timestamp"],
+                )
         raise
 
 

@@ -15,7 +15,7 @@ spec:
       containers:
         - name: simulator
           image: tempsafe-simulator:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Never
           command: ["python", "simulator-2.py"]
           env:
             - name: KAFKA_BROKER
@@ -24,3 +24,9 @@ spec:
               value: "http://shipment.apps.svc.cluster.local:8000/sensors/active"
             - name: SHIPMENT_API_BASE_URL
               value: "http://shipment.apps.svc.cluster.local:8000"
+            - name: SIMULATOR_POLL_INTERVAL_SECONDS
+              value: "8"
+            - name: SIMULATOR_REFRESH_INTERVAL_SECONDS
+              value: "30"
+            - name: SIMULATOR_STEP_DEGREES
+              value: "0.20"
