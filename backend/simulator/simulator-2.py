@@ -26,14 +26,10 @@ REFRESH_INTERVAL_SECONDS = float(os.getenv("SIMULATOR_REFRESH_INTERVAL_SECONDS",
 BUFFER_LIMIT = int(os.getenv("SIMULATOR_BUFFER_LIMIT", "12"))
 ENABLE_NO_SIGNAL = os.getenv("SIMULATOR_ENABLE_NO_SIGNAL", "true").lower() == "true"
 
-# --- Tick-count constants (auto-scaled to poll interval) ---
-# These define real-world durations that remain consistent regardless of tick rate:
-#   Excursion duration  : 2 – 4 minutes
-#   Safe cooldown period: 6 – 10 minutes
-_EXCURSION_MIN_TICKS = max(3, int(120 / POLL_INTERVAL_SECONDS))   # 2 min minimum
-_EXCURSION_MAX_TICKS = max(5, int(240 / POLL_INTERVAL_SECONDS))   # 4 min maximum
-_COOLDOWN_MIN_TICKS  = max(5, int(360 / POLL_INTERVAL_SECONDS))   # 6 min minimum
-_COOLDOWN_MAX_TICKS  = max(8, int(600 / POLL_INTERVAL_SECONDS))   # 10 min maximum
+_EXCURSION_MIN_TICKS = 3    # Minimum ticks an excursion lasts
+_EXCURSION_MAX_TICKS = 6    # Maximum ticks an excursion lasts
+_COOLDOWN_MIN_TICKS  = 4    # Minimum ticks of safe cooldown after recovery
+_COOLDOWN_MAX_TICKS  = 8    # Maximum ticks of safe cooldown after recovery
 
 # --- Geo-navigation settings ---
 # How many degrees of lat/lng the sensor moves per simulation tick toward destination.
@@ -292,37 +288,19 @@ async def sensor_worker(sensor: SensorContext, producer: AIOKafkaProducer):
     else:
         logger.warning("[%s] No valid destination coords — falling back to random walk", sensor.sensor_id)
 
-    # Randomly assign ~40% of sensors to be "faulty" for demo realism
-    is_faulty = random.random() < 0.4
+    is_faulty = random.random() < 0.5
     
+    # Faulty sensors always start NORMAL and trigger their first excursion
+    first_excursion_warmup = random.randint(2, 4) if is_faulty else 0
+    ticks_since_start = 0
+    first_excursion_fired = False
+
     # --- Deterministic State Machine Counters ---
     # States: NORMAL, EXCURSION, RECOVERY, SAFE_COOLDOWN
-    # "RECOVERY" is a new intermediate phase: excursion just ended, actively pulling
-    # temp back into safe range. "SAFE_COOLDOWN" is a mandatory quiet period after
-    # recovery so the sensor must fully stabilize before any new excursion can trigger.
     state = "NORMAL"
     excursion_direction = "HIGH"
-    excursion_ticks_remaining = 0     # How many more ticks the current excursion will last
-    safe_cooldown_ticks_remaining = 0 # How many ticks the sensor must stay calm after recovery
-
-    # Faulty sensors: kick off immediately in excursion on first cycle
-    if is_faulty:
-        excursion_direction = random.choice(["HIGH", "LOW"])
-        excursion_ticks_remaining = random.randint(_EXCURSION_MIN_TICKS, _EXCURSION_MAX_TICKS)
-        state = "EXCURSION"
-        if excursion_direction == "HIGH":
-            current_temp = sensor.max_temp_limit + random.uniform(2.0, 5.0)
-            logger.warning("[%s] FAULTY — starting EXCURSION HIGH at %.2fC", sensor.sensor_id, current_temp)
-        else:
-            current_temp = sensor.min_temp_limit - random.uniform(2.0, 5.0)
-            logger.warning("[%s] FAULTY — starting EXCURSION LOW at %.2fC", sensor.sensor_id, current_temp)
-
-    if has_destination and latitude is not None and longitude is not None:
-        total_km = haversine_distance_km(latitude, longitude, dest_lat, dest_lng)
-        logger.info("[%s] Navigating %.1f km from (%.4f, %.4f) → (%.4f, %.4f)",
-                    sensor.sensor_id, total_km, latitude, longitude, dest_lat, dest_lng)
-    else:
-        logger.warning("[%s] No valid destination coords — falling back to random walk", sensor.sensor_id)
+    excursion_ticks_remaining = 0
+    safe_cooldown_ticks_remaining = 0
 
     try:
         while True:
@@ -333,7 +311,18 @@ async def sensor_worker(sensor: SensorContext, producer: AIOKafkaProducer):
             #          → SAFE_COOLDOWN (20-30 ticks of quiet)
             #          → NORMAL → (repeat if faulty)
             # ---------------------------------------------------------------
-            if state == "EXCURSION":
+            ticks_since_start += 1
+
+            # First excursion warmup for faulty sensors — triggers after a few safe ticks
+            if is_faulty and not first_excursion_fired and ticks_since_start >= first_excursion_warmup and state == "NORMAL":
+                excursion_direction = random.choice(["HIGH", "LOW"])
+                excursion_ticks_remaining = random.randint(_EXCURSION_MIN_TICKS, _EXCURSION_MAX_TICKS)
+                state = "EXCURSION"
+                first_excursion_fired = True
+                logger.warning("[%s] FAULTY — triggering first EXCURSION (%s) after %d warmup ticks.",
+                               sensor.sensor_id, excursion_direction, ticks_since_start)
+
+            elif state == "EXCURSION":
                 excursion_ticks_remaining -= 1
                 if excursion_ticks_remaining <= 0:
                     # Excursion has lasted long enough — force recovery
@@ -358,8 +347,9 @@ async def sensor_worker(sensor: SensorContext, producer: AIOKafkaProducer):
                     logger.info("[%s] Cooldown complete. Resuming NORMAL.", sensor.sensor_id)
 
             elif state == "NORMAL":
-                # Faulty sensors can trigger a new excursion with low probability
-                if is_faulty and random.random() < 0.04:
+                # Faulty sensors re-trigger excursions; normal sensors do so rarely
+                trigger_prob = 0.25 if is_faulty else 0.05
+                if random.random() < trigger_prob:
                     excursion_direction = random.choice(["HIGH", "LOW"])
                     excursion_ticks_remaining = random.randint(_EXCURSION_MIN_TICKS, _EXCURSION_MAX_TICKS)
                     state = "EXCURSION"

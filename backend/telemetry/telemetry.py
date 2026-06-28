@@ -118,7 +118,7 @@ async def setup_db(pool: asyncpg.Pool):
                 alert_id         UUID         PRIMARY KEY,
                 reading_event_id UUID         NOT NULL,
                 sensor_id        VARCHAR(50)  NOT NULL,
-                shipment_id      VARCHAR(100) NOT NULL UNIQUE,
+                shipment_id      VARCHAR(100) NOT NULL,
                 temperature      FLOAT        NOT NULL,
                 min_temp_limit   FLOAT        NOT NULL,
                 max_temp_limit   FLOAT        NOT NULL,
@@ -127,21 +127,23 @@ async def setup_db(pool: asyncpg.Pool):
                 recorded_at      TIMESTAMPTZ  NOT NULL,
                 is_buffered      BOOLEAN      NOT NULL DEFAULT FALSE,
                 acknowledged     BOOLEAN      NOT NULL DEFAULT FALSE,
-                created_at       TIMESTAMPTZ  DEFAULT NOW()
+                created_at       TIMESTAMPTZ  DEFAULT NOW(),
+                UNIQUE (sensor_id, shipment_id, recorded_at)
             );
         """)
         
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS excursion_events (
                 excursion_id    UUID         PRIMARY KEY,
-                shipment_id     VARCHAR(100) NOT NULL UNIQUE,
+                shipment_id     VARCHAR(100) NOT NULL,
                 sensor_id       VARCHAR(50)  NOT NULL,
                 breach_time     TIMESTAMPTZ  NOT NULL,
                 recorded_temp   FLOAT        NOT NULL,
                 status          VARCHAR(20)  NOT NULL DEFAULT 'OPEN',
                 acknowledged_by VARCHAR(100),
                 resolution_note TEXT,
-                created_at      TIMESTAMPTZ  DEFAULT NOW()
+                created_at      TIMESTAMPTZ  DEFAULT NOW(),
+                UNIQUE (sensor_id, shipment_id, breach_time)
             );
         """)
     logger.info("DB schema ready.")

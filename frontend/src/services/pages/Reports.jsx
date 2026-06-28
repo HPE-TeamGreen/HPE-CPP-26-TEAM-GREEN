@@ -291,9 +291,28 @@ export default function Reports() {
       const first = logs[0];
       const last = logs[logs.length - 1];
       const inner = logs.slice(1, -1);
-      const step = Math.ceil(inner.length / 23);
-      const sampled = [first];
-      for (let i = 0; i < inner.length; i += step) sampled.push(inner[i]);
+      
+      const excursions = inner.filter(t => t.temperature < sensorReport.min_temp_limit || t.temperature > sensorReport.max_temp_limit);
+      const oks = inner.filter(t => t.temperature >= sensorReport.min_temp_limit && t.temperature <= sensorReport.max_temp_limit);
+      
+      let sampled = [first];
+      
+      // Calculate how many OK readings we can fit
+      const targetOks = Math.max(0, 23 - excursions.length);
+      
+      if (targetOks > 0 && oks.length > 0) {
+        const step = Math.max(1, Math.ceil(oks.length / targetOks));
+        for (let i = 0; i < oks.length; i += step) {
+          sampled.push(oks[i]);
+        }
+      }
+      
+      // Combine sampled OKs with ALL excursions, then sort chronologically
+      sampled = [...sampled, ...excursions];
+      sampled.sort((a, b) => new Date(a.recorded_at) - new Date(b.recorded_at));
+      
+      // Cap at 24 items (plus 'last' makes 25) in case there were too many excursions
+      sampled = sampled.slice(0, 24);
       sampled.push(last);
       logs = sampled;
     }
