@@ -185,6 +185,117 @@ function buildMonthlyBarSvg(data) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect x="0" y="0" width="${width}" height="${height}" fill="#111827" rx="12" />${yTicks}${bars}${labels}</svg>`;
 }
 
+const dispositionRules = {
+  noExcursions: {
+    verdict: 'Approved for use',
+    summary: (productLabel) => `The shipment stayed within the approved temperature range, so ${productLabel} appears suitable for use.`,
+    tone: 'good',
+    color: 'var(--accent-green)',
+  },
+  conditional: {
+    verdict: 'Conditional release',
+    summary: (productLabel, details) => `The shipment recorded ${details.excursions} excursion${details.excursions === 1 ? '' : 's'} and showed ${details.severity}. ${productLabel} may need QA approval before it can be used.`,
+    tone: 'warning',
+    color: '#f59e0b',
+  },
+  noNeedToUse: {
+    verdict: 'No need to use',
+    summary: (productLabel, details) => `The shipment recorded ${details.excursions} excursion${details.excursions === 1 ? '' : 's'} and showed ${details.severity}. ${productLabel} should not be used and may require disposal or requalification.`,
+    tone: 'danger',
+    color: 'var(--accent-red)',
+  },
+  doNotUse: {
+    verdict: 'Do not use',
+    summary: (productLabel, details) => `The shipment recorded ${details.excursions} excursion${details.excursions === 1 ? '' : 's'} and showed ${details.severity}. ${productLabel} should not be released for use without requalification or disposal.`,
+    tone: 'danger',
+    color: 'var(--accent-red)',
+  },
+  selectShipment: {
+    verdict: 'Select a shipment',
+    summary: 'Choose a shipment to see the suitability review.',
+    tone: 'neutral',
+    color: 'var(--text-secondary)',
+  },
+};
+
+function buildShipmentDisposition(shipment, sensorReport, excursions = []) {
+  if (!shipment) {
+    return dispositionRules.selectShipment;
+  }
+
+  const shipmentExcursions = (excursions || []).filter((entry) => {
+    const shipmentId = entry?.shipmentId || entry?.shipment_id;
+    return shipmentId === shipment.id || shipmentId === shipment.shipmentId;
+  });
+
+  const excursionCount = shipmentExcursions.length;
+  const analyticsExcursions = Number(sensorReport?.analytics?.total_excursions || 0);
+  const effectiveExcursions = analyticsExcursions || excursionCount;
+
+  const minAllowed = Number(sensorReport?.min_temp_limit ?? shipment?.minTemp ?? 0);
+  const maxAllowed = Number(sensorReport?.max_temp_limit ?? shipment?.maxTemp ?? 0);
+  const currentTemp = Number(shipment?.currentTemp ?? 0);
+  const tempOutsideRange = minAllowed && maxAllowed ? currentTemp < minAllowed || currentTemp > maxAllowed : false;
+
+  const minRecorded = Number(sensorReport?.analytics?.min_temp ?? shipment?.currentTemp ?? 0);
+  const maxRecorded = Number(sensorReport?.analytics?.max_temp ?? shipment?.currentTemp ?? 0);
+  const deviationMagnitude = sensorReport
+    ? Math.max(Math.abs(minRecorded - minAllowed), Math.abs(maxRecorded - maxAllowed))
+    : 0;
+  const majorDeviation = sensorReport
+    ? (minRecorded < minAllowed - 2 || maxRecorded > maxAllowed + 2)
+    : tempOutsideRange;
+
+  const shipmentDuration = shipment?.createdAt ? Math.max(1, Math.round((Date.now() - new Date(shipment.createdAt).getTime()) / (1000 * 60 * 60 * 24))) : 1;
+  const productSensitivity = String(shipment?.product || '').toLowerCase();
+  const sensitiveProduct = ['vaccine', 'insulin', 'blood', 'plasma', 'serum', 'biologic'].some((term) => productSensitivity.includes(term));
+
+  const severity = (() => {
+    if (majorDeviation && effectiveExcursions >= 5) return 'severe and repeated temperature breaches';
+    if (majorDeviation) return 'major temperature deviation';
+    if (effectiveExcursions >= 5) return 'repeated temperature instability';
+    if (effectiveExcursions >= 3) return 'multiple temperature excursions';
+    if (effectiveExcursions === 1) return 'a single temperature excursion';
+    return 'normal temperature performance';
+  })();
+
+  const productLabel = shipment.product || 'this product';
+  const details = { excursions: effectiveExcursions, severity, deviationMagnitude, shipmentDuration, sensitiveProduct };
+
+  if (effectiveExcursions === 0 && !majorDeviation) {
+    return {
+      ...dispositionRules.noExcursions,
+      summary: dispositionRules.noExcursions.summary(productLabel),
+    };
+  }
+
+  if (effectiveExcursions >= 5 || (majorDeviation && (deviationMagnitude >= 4 || sensitiveProduct))) {
+    return {
+      ...dispositionRules.noNeedToUse,
+      summary: dispositionRules.noNeedToUse.summary(productLabel, details),
+    };
+  }
+
+  if (majorDeviation || (effectiveExcursions >= 3 && (deviationMagnitude >= 2 || sensitiveProduct || shipmentDuration > 3))) {
+    return {
+      ...dispositionRules.doNotUse,
+      summary: dispositionRules.doNotUse.summary(productLabel, details),
+    };
+  }
+
+  if (effectiveExcursions >= 3 || (effectiveExcursions >= 1 && (deviationMagnitude >= 1 || sensitiveProduct))) {
+    return {
+      ...dispositionRules.conditional,
+      summary: dispositionRules.conditional.summary(productLabel, details),
+    };
+  }
+
+  return {
+    ...dispositionRules.conditional,
+    summary: dispositionRules.conditional.summary(productLabel, details),
+  };
+}
+
 function CollapsibleChart({ title, badge, children }) {
   const [open, setOpen] = useState(false);
   return (
@@ -229,7 +340,7 @@ function CollapsibleChart({ title, badge, children }) {
 }
 
 export default function Reports() {
-  const { shipments, can } = useApp();
+  const { shipments, excursions, can } = useApp();
 
   const canExport = can('exportReport');
 
@@ -474,6 +585,47 @@ export default function Reports() {
     if (!sensorReport || !selectedShipment) return;
     const s = shipments.find(sh => sh.id === selectedShipment);
     const createdOn = new Date().toLocaleDateString();
+    const disposition = buildShipmentDisposition(s, sensorReport, excursions);
+    const shipmentExcursions = (excursions || []).filter((entry) => {
+      const shipmentId = entry?.shipmentId || entry?.shipment_id;
+      return shipmentId === s?.id || shipmentId === s?.shipmentId;
+    });
+    const effectiveExcursions = Number(sensorReport?.analytics?.total_excursions || shipmentExcursions.length || 0);
+    const minAllowed = Number(sensorReport?.min_temp_limit ?? s?.minTemp ?? 0);
+    const maxAllowed = Number(sensorReport?.max_temp_limit ?? s?.maxTemp ?? 0);
+    const minRecorded = Number(sensorReport?.analytics?.min_temp ?? s?.currentTemp ?? 0);
+    const maxRecorded = Number(sensorReport?.analytics?.max_temp ?? s?.currentTemp ?? 0);
+    const majorDeviation = minRecorded < minAllowed - 2 || maxRecorded > maxAllowed + 2;
+
+    const reasoningItems = [];
+    if (effectiveExcursions > 0) {
+      reasoningItems.push(`Recorded ${effectiveExcursions} excursion${effectiveExcursions === 1 ? '' : 's'} during transit.`);
+    } else {
+      reasoningItems.push('No excursion was recorded during the shipment window.');
+    }
+
+    if (minAllowed && maxAllowed) {
+      reasoningItems.push(`Observed temperatures ranged from ${minRecorded}°C to ${maxRecorded}°C, compared with the allowed range of ${minAllowed}°C to ${maxAllowed}°C.`);
+    }
+
+    if (majorDeviation) {
+      reasoningItems.push('The shipment exceeded the approved temperature limits by a significant margin, which raises release risk.');
+    } else if (effectiveExcursions > 0) {
+      reasoningItems.push('The excursion pattern was limited, so the shipment may need QA review before release.');
+    } else {
+      reasoningItems.push('The shipment remained within the expected temperature band throughout transit.');
+    }
+
+    if (s?.createdAt) {
+      const durationDays = Math.max(1, Math.round((Date.now() - new Date(s.createdAt).getTime()) / (1000 * 60 * 60 * 24)));
+      reasoningItems.push(`The shipment duration was ${durationDays} day${durationDays === 1 ? '' : 's'}, which was considered in the release review.`);
+    }
+
+    const productSensitivity = String(s?.product || '').toLowerCase();
+    const sensitiveProduct = ['vaccine', 'insulin', 'blood', 'plasma', 'serum', 'biologic'].some((term) => productSensitivity.includes(term));
+    if (sensitiveProduct) {
+      reasoningItems.push('The product is classified as temperature-sensitive, which increases the review severity.');
+    }
 
     // ── Downsample telemetry to at most 25 rows so the report fits on one page ──
     let logs = (sensorReport.telemetry || []).slice().sort(
@@ -543,8 +695,13 @@ export default function Reports() {
   .g4   { grid-template-columns: repeat(4,1fr); }
   .g5   { grid-template-columns: repeat(5,1fr); }
   .card { border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 8px; background: #f9fafb; }
+  .alert-card { padding: 8px 10px; border-left: 4px solid #3b82f6; background: #f8fbff; }
   .lbl  { font-size: 7.5px; text-transform: uppercase; letter-spacing: .06em; color: #9ca3af; margin-bottom: 3px; }
   .val  { font-size: 13px; font-weight: 700; color: #111827; line-height: 1; }
+  .verdict { font-size: 12px; font-weight: 700; margin-bottom: 4px; color: ${disposition.color}; }
+  .reason { font-size: 9.5px; color: #374151; line-height: 1.45; margin-bottom: 5px; }
+  .reason-list { margin: 0; padding-left: 13px; color: #4b5563; font-size: 8.8px; line-height: 1.4; }
+  .reason-list li { margin-bottom: 2px; }
   table { width: 100%; border-collapse: collapse; margin-top: 5px; }
   th    { font-size: 7.5px; text-transform: uppercase; letter-spacing: .06em;
           color: #6b7280; background: #f3f4f6; padding: 4px 7px; text-align: left; border-bottom: 1px solid #e5e7eb; }
@@ -569,6 +726,17 @@ export default function Reports() {
     <div class="card"><div class="lbl">Origin</div><div class="val" style="font-size:11px">${s.origin}</div></div>
     <div class="card"><div class="lbl">Destination</div><div class="val" style="font-size:11px">${s.destination}</div></div>
     <div class="card"><div class="lbl">Status</div><div class="val" style="font-size:11px">${s.status}</div></div>
+  </div>
+</div>
+
+<div class="sec">
+  <div class="sec-title">Suitability Assessment</div>
+  <div class="card alert-card">
+    <div class="verdict">${disposition.verdict}</div>
+    <div class="reason">${disposition.summary}</div>
+    <ul class="reason-list">
+      ${reasoningItems.map((item) => `<li>${item}</li>`).join('')}
+    </ul>
   </div>
 </div>
 
@@ -686,7 +854,7 @@ export default function Reports() {
                       display: 'grid',
                       gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
                       gap: '20px',
-                      marginBottom: s.status === 'DELIVERED' ? '30px' : '0'
+                      marginBottom: '24px'
                     }}>
                       <div>
                         <div style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', marginBottom: '4px' }}>Product</div>
@@ -697,6 +865,41 @@ export default function Reports() {
                         <div style={{ fontSize: '15px', fontWeight: '500', color: 'var(--text-primary)' }}>{s.origin} &rarr; {s.destination}</div>
                       </div>
                     </div>
+
+                    {(() => {
+                      const disposition = buildShipmentDisposition(s, sensorReport, excursions);
+                      const dispositionStyles = {
+                        background: disposition.tone === 'good'
+                          ? 'rgba(16, 185, 129, 0.1)'
+                          : disposition.tone === 'danger'
+                            ? 'rgba(239, 68, 68, 0.1)'
+                            : disposition.tone === 'warning'
+                              ? 'rgba(245, 158, 11, 0.12)'
+                              : 'rgba(59, 130, 246, 0.1)',
+                        border: `1px solid ${disposition.tone === 'good'
+                          ? 'rgba(16, 185, 129, 0.25)'
+                          : disposition.tone === 'danger'
+                            ? 'rgba(239, 68, 68, 0.25)'
+                            : disposition.tone === 'warning'
+                              ? 'rgba(245, 158, 11, 0.25)'
+                              : 'rgba(59, 130, 246, 0.25)'}`,
+                        borderRadius: '12px',
+                        padding: '16px 18px',
+                        marginBottom: '24px',
+                      };
+
+                      return (
+                        <div style={dispositionStyles}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '8px' }}>
+                            <div>
+                              <div style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', marginBottom: '4px' }}>Suitability summary</div>
+                              <div style={{ fontSize: '15px', fontWeight: '600', color: disposition.color }}>{disposition.verdict}</div>
+                            </div>
+                          </div>
+                          <p style={{ margin: 0, fontSize: '14px', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{disposition.summary}</p>
+                        </div>
+                      );
+                    })()}
 
                     {s.status === 'DELIVERED' && (
                       <div style={{
