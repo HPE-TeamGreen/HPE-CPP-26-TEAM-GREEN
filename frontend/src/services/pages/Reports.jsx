@@ -30,6 +30,161 @@ const tooltipStyle = {
   labelStyle: { color: 'var(--text-secondary)' },
 };
 
+const chartTextColor = '#ffffff';
+const chartGridColor = 'rgba(255, 255, 255, 0.18)';
+const chartAccentColor = '#3B82F6';
+const chartLimitColor = '#F59E0B';
+const chartExcursionColor = '#EF4444';
+const chartComplianceColor = '#22C55E';
+const chartMonthlyExcursionColor = '#F59E0B';
+
+function formatMonthLabel(value) {
+  if (value == null) return '';
+  const normalized = String(value).trim();
+  if (!normalized) return '';
+  const numeric = Number(normalized);
+  if (!Number.isNaN(numeric) && numeric >= 1 && numeric <= 12) {
+    return new Date(2020, numeric - 1, 1).toLocaleString('en-US', { month: 'short' });
+  }
+  if (/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(normalized)) {
+    const [year, month] = normalized.split('-');
+    return new Date(Number(year), Number(month) - 1, 1).toLocaleString('en-US', { month: 'short' });
+  }
+  if (normalized.length <= 3) return normalized.charAt(0).toUpperCase() + normalized.slice(1).toLowerCase();
+  return normalized.slice(0, 3);
+}
+
+function buildChartTicks(maxValue, count = 5) {
+  const safeMax = Math.max(1, Math.ceil(maxValue));
+  const targetTicks = Math.min(count, Math.max(2, safeMax + 1));
+  const interval = Math.max(1, Math.ceil(safeMax / (targetTicks - 1)));
+  return Array.from({ length: targetTicks }, (_, index) => index * interval);
+}
+
+function buildMonthlyLineSvg(data) {
+  const width = 520;
+  const height = 220;
+  const padding = 28;
+  const values = data.map(row => Number(row.compliance) || 0);
+  const max = 100;
+  const min = 0;
+  const stepX = data.length > 1 ? (width - padding * 2) / (data.length - 1) : 0;
+
+  const points = values.map((value, index) => {
+    const x = padding + index * stepX;
+    const y = height - padding - ((value - min) / (max - min || 1)) * (height - padding * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  const labels = data.map((row, index) => {
+    const x = padding + index * stepX;
+    const monthLabel = formatMonthLabel(row.month);
+    return `<text x="${x}" y="${height - 8}" text-anchor="middle" font-size="11" fill="${chartTextColor}">${monthLabel}</text>`;
+  }).join('');
+
+  const yTicks = [0, 25, 50, 75, 100].map((tick) => {
+    const y = height - padding - ((tick - min) / (max - min || 1)) * (height - padding * 2);
+    return `<g><line x1="${padding}" y1="${y}" x2="${width - padding}" y2="${y}" stroke="${chartGridColor}" stroke-dasharray="4 4"></line><text x="${padding - 8}" y="${y + 4}" text-anchor="end" font-size="10" fill="${chartTextColor}">${tick}%</text></g>`;
+  }).join('');
+
+  const circles = points.split(' ').map((point) => {
+    const [x, y] = point.split(',');
+    return `<circle cx="${x}" cy="${y}" r="4.5" fill="${chartComplianceColor}" />`;
+  }).join('');
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect x="0" y="0" width="${width}" height="${height}" fill="#111827" rx="12" />${yTicks}<polyline fill="none" stroke="${chartComplianceColor}" stroke-width="3" points="${points}" />${circles}${labels}</svg>`;
+}
+
+function buildTelemetryTimelineSvg(telemetry, minTempLimit, maxTempLimit) {
+  const width = 580;
+  const height = 260;
+  const padding = 38;
+  const rows = (telemetry || []).map((entry) => ({
+    timestamp: entry.recorded_at,
+    value: Number(entry.temperature) || 0,
+  }));
+
+  if (!rows.length) {
+    return '<div style="color:#9ca3af;font-size:12px;padding:8px 0;">No telemetry data available.</div>';
+  }
+
+  const values = rows.map((row) => row.value);
+  const minValue = Math.min(...values, minTempLimit, maxTempLimit) - 1;
+  const maxValue = Math.max(...values, minTempLimit, maxTempLimit) + 1;
+  const stepX = rows.length > 1 ? (width - padding * 2) / (rows.length - 1) : 0;
+
+  const points = rows.map((row, index) => {
+    const x = padding + index * stepX;
+    const y = height - padding - ((row.value - minValue) / (maxValue - minValue || 1)) * (height - padding * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  const firstDate = new Date(rows[0].timestamp);
+  const lastDate = new Date(rows[rows.length - 1].timestamp);
+  const sameDay = firstDate.toDateString() === lastDate.toDateString();
+
+  const xLabels = rows.map((row, index) => {
+    const x = padding + index * stepX;
+    if (rows.length > 10 && index % 2 !== 0) return '';
+    const date = new Date(row.timestamp);
+    const month = date.toLocaleString('en-US', { month: 'short' });
+    const day = date.getDate();
+    const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    let label = time;
+    if (!sameDay && (index === 0 || index === rows.length - 1)) {
+      label = `${month} ${day} ${time}`;
+    }
+    return `<text x="${x}" y="${height - 8}" text-anchor="middle" font-size="10" fill="${chartTextColor}">${label}</text>`;
+  }).join('');
+
+  const limitLines = [
+    { value: minTempLimit, label: 'Min Limit', color: chartLimitColor },
+    { value: maxTempLimit, label: 'Max Limit', color: chartLimitColor },
+  ].map((line) => {
+    const y = height - padding - ((line.value - minValue) / (maxValue - minValue || 1)) * (height - padding * 2);
+    return `<g><line x1="${padding}" y1="${y}" x2="${width - padding}" y2="${y}" stroke="${line.color}" stroke-dasharray="6 4" stroke-width="1.5" opacity="0.85" /><text x="${padding + 2}" y="${y - 6}" font-size="10" fill="${line.color}">${line.label}</text></g>`;
+  }).join('');
+
+  const yTicks = [minValue, (minValue + maxValue) / 2, maxValue].map((tick) => {
+    const y = height - padding - ((tick - minValue) / (maxValue - minValue || 1)) * (height - padding * 2);
+    return `<g><line x1="${padding}" y1="${y}" x2="${width - padding}" y2="${y}" stroke="${chartGridColor}" stroke-dasharray="4 4" /><text x="${padding - 10}" y="${y + 4}" text-anchor="end" font-size="10" fill="${chartTextColor}">${tick.toFixed(1)}°C</text></g>`;
+  }).join('');
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect x="0" y="0" width="${width}" height="${height}" fill="#111827" rx="16" /><rect x="${padding}" y="${padding - 12}" width="${width - padding * 2}" height="${height - padding * 1.5}" fill="transparent" rx="12" />${yTicks}${limitLines}<polyline fill="none" stroke="${chartAccentColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${points}" />${xLabels}</svg>`;
+}
+
+function buildMonthlyBarSvg(data) {
+  const width = 520;
+  const height = 220;
+  const padding = 28;
+  const values = data.map(row => Number(row.excursions) || 0);
+  const maxValue = Math.max(...values, 0);
+  const tickValues = buildChartTicks(maxValue, 5);
+  const chartMax = Math.max(1, tickValues[tickValues.length - 1]);
+  const gap = 12;
+  const barWidth = data.length > 0 ? (width - padding * 2 - gap * (data.length - 1)) / data.length : 0;
+
+  const bars = values.map((value, index) => {
+    const barHeight = (value / chartMax) * (height - padding * 2);
+    const x = padding + index * (barWidth + gap);
+    const y = height - padding - barHeight;
+    return `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4" fill="${chartMonthlyExcursionColor}" />`;
+  }).join('');
+
+  const labels = data.map((row, index) => {
+    const x = padding + index * (barWidth + gap) + barWidth / 2;
+    const month = formatMonthLabel(row.month);
+    return `<text x="${x}" y="${height - 8}" text-anchor="middle" font-size="11" fill="${chartTextColor}">${month}</text>`;
+  }).join('');
+
+  const yTicks = tickValues.map((tick) => {
+    const y = height - padding - ((tick / chartMax) * (height - padding * 2));
+    return `<g><line x1="${padding}" y1="${y}" x2="${width - padding}" y2="${y}" stroke="${chartGridColor}" stroke-dasharray="4 4"></line><text x="${padding - 8}" y="${y + 4}" text-anchor="end" font-size="10" fill="${chartTextColor}">${tick}</text></g>`;
+  }).join('');
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect x="0" y="0" width="${width}" height="${height}" fill="#111827" rx="12" />${yTicks}${bars}${labels}</svg>`;
+}
+
 function CollapsibleChart({ title, badge, children }) {
   const [open, setOpen] = useState(false);
   return (
@@ -87,6 +242,11 @@ export default function Reports() {
   const [sensorReport, setSensorReport] = useState(null);
   const [sensorReportLoading, setSensorReportLoading] = useState(false);
   const [sensorReportError, setSensorReportError] = useState(null);
+
+  const compactMonthlyData = monthlyData.map((row) => ({
+    ...row,
+    month: String(row.month || '').slice(0, 3),
+  }));
 
   useEffect(() => {
     const shipment = shipments.find(s => s.id === selectedShipment);
@@ -150,6 +310,31 @@ export default function Reports() {
     return p.product.toLowerCase().includes(productQuery.toLowerCase());
   });
 
+  const openPrintableWindow = (html, title) => {
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const printWindow = window.open(url, '_blank', 'width=960,height=720');
+
+    if (!printWindow) {
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    printWindow.document.write(html);
+    printWindow.document.title = title;
+    printWindow.document.close();
+    printWindow.focus();
+
+    setTimeout(() => {
+      try {
+        printWindow.print();
+        printWindow.close();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }, 700);
+  };
+
   const handleExportPdf = () => {
     const createdOn = new Date().toLocaleDateString();
     const totals = monthlyData.reduce((acc, row) => {
@@ -162,6 +347,8 @@ export default function Reports() {
       complianceStats?.compliance_percentage?.toFixed?.(2) ??
       complianceStats?.compliance_percentage ??
       '0.0';
+    const monthlyLineChartSvg = buildMonthlyLineSvg(monthlyData.length ? monthlyData : [{ month: 'N/A', compliance: 0 }]);
+    const monthlyBarChartSvg = buildMonthlyBarSvg(monthlyData.length ? monthlyData : [{ month: 'N/A', excursions: 0 }]);
 
     const html = `
       <!doctype html>
@@ -191,6 +378,9 @@ export default function Reports() {
             tbody tr:nth-child(even) td { background: #fafafa; }
             .right { text-align: right; }
             .muted { color: #6b7280; }
+            .chart-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fafafa; margin-top: 10px; }
+            .chart-title { font-size: 12px; font-weight: 700; color: #111827; margin-bottom: 6px; }
+            .page-break { display: block; page-break-before: always; break-before: page; margin-top: 24px; }
             @media print { body { margin: 18mm; } }
           </style>
         </head>
@@ -200,7 +390,6 @@ export default function Reports() {
               <h1>TempSafe Compliance Report</h1>
               <div class="meta">Generated on ${createdOn} · Window: last 6 months</div>
             </div>
-            <div class="pill">PDF Export</div>
           </div>
 
           <div class="summary">
@@ -231,7 +420,7 @@ export default function Reports() {
               <tbody>
                 ${monthlyData.map(row => `
                   <tr>
-                    <td>${row.month}</td>
+                    <td>${formatMonthLabel(row.month)}</td>
                     <td class="right">${row.shipments}</td>
                     <td class="right">${row.excursions}</td>
                     <td class="right">${row.compliance}%</td>
@@ -242,6 +431,19 @@ export default function Reports() {
           </div>
 
           <div class="section">
+            <div class="section-title">Compliance Trend</div>
+            <div class="section-sub">A compact visual summary of monthly compliance and excursions.</div>
+            <div class="chart-card">
+              <div class="chart-title">Compliance Rate</div>
+              ${monthlyLineChartSvg}
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">Excursions per Month</div>
+              ${monthlyBarChartSvg}
+            </div>
+          </div>
+
+          <div class="section page-break">
             <div class="section-title">Product Temperature Summary</div>
             <div class="section-sub">Average temperature and excursions by product category.</div>
             <table>
@@ -265,17 +467,7 @@ export default function Reports() {
       </html>
     `;
 
-    const printWindow = window.open('', '', 'width=960,height=720');
-    if (!printWindow) return;
-
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.onload = () => {
-      printWindow.print();
-      printWindow.close();
-    };
+    openPrintableWindow(html, 'TempSafe Compliance Report');
   };
 
   const handleExportSensorPdf = () => {
@@ -317,7 +509,7 @@ export default function Reports() {
       logs = sampled;
     }
 
-    const logRows = logs.length > 0
+      const logRows = logs.length > 0
       ? logs.map(t => {
         const exc = t.temperature < sensorReport.min_temp_limit || t.temperature > sensorReport.max_temp_limit;
         return `<tr>
@@ -328,11 +520,12 @@ export default function Reports() {
       }).join('')
       : '<tr><td colspan="3" style="color:#6b7280;text-align:center">No telemetry data available.</td></tr>';
 
+    const telemetryChartSvg = buildTelemetryTimelineSvg(logs, sensorReport.min_temp_limit, sensorReport.max_temp_limit);
     const excColor = sensorReport.analytics.total_excursions > 0 ? '#ef4444' : '#10b981';
 
     const html = `<!doctype html><html><head>
 <meta charset="utf-8"/>
-<title>Sensor Report – ${s.sensorId}</title>
+<title>Shipment Delivery Report</title>
 <style>
   @page { size: A4 portrait; margin: 14mm 16mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -341,8 +534,7 @@ export default function Reports() {
           padding-bottom: 8px; border-bottom: 2px solid #111827; margin-bottom: 10px; }
   .hdr h1 { font-size: 16px; font-weight: 700; letter-spacing: -.3px; }
   .hdr .sub { font-size: 9px; color: #6b7280; margin-top: 3px; }
-  .pill { font-size: 8px; letter-spacing: .06em; text-transform: uppercase;
-          border: 1px solid #d1d5db; padding: 3px 7px; border-radius: 999px; color: #6b7280; }
+  .pill { display: none; }
   .sec  { margin-top: 9px; }
   .sec-title { font-size: 9px; font-weight: 700; text-transform: uppercase;
                letter-spacing: .07em; color: #6b7280; margin-bottom: 5px;
@@ -359,15 +551,15 @@ export default function Reports() {
   td    { font-size: 9.5px; padding: 3.5px 7px; border-bottom: 1px solid #f3f4f6; }
   tbody tr:nth-child(even) td { background: #fafafa; }
   .r    { text-align: right; }
+  .chart-box { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; background: #fafafa; margin-top: 6px; }
 </style>
 </head><body>
 
 <div class="hdr">
   <div>
-    <h1>Sensor Delivery Report</h1>
+    <h1>Shipment Delivery Report</h1>
     <div class="sub">Shipment: ${s.id} &nbsp;|&nbsp; Sensor: ${s.sensorId} &nbsp;|&nbsp; Date: ${createdOn}</div>
   </div>
-  <div class="pill">PDF Export</div>
 </div>
 
 <div class="sec">
@@ -392,6 +584,11 @@ export default function Reports() {
 </div>
 
 <div class="sec">
+  <div class="sec-title">Temperature Timeline</div>
+  <div class="chart-box">${telemetryChartSvg}</div>
+</div>
+
+<div class="sec">
   <div class="sec-title">Temperature Log <span style="font-weight:400;color:#9ca3af">(showing ${logs.length} representative readings)</span></div>
   <table>
     <thead><tr><th>Time</th><th class="r">Temperature (°C)</th><th class="r">Status</th></tr></thead>
@@ -401,17 +598,7 @@ export default function Reports() {
 
 </body></html>`;
 
-    const printWindow = window.open('', '', 'width=960,height=720');
-    if (!printWindow) return;
-
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.onload = () => {
-      printWindow.print();
-      printWindow.close();
-    };
+    openPrintableWindow(html, `Sensor Delivery Report – ${s.sensorId}`);
   };
 
   return (
@@ -562,14 +749,14 @@ export default function Reports() {
                                 <h5 style={{ marginBottom: '10px', color: 'var(--text-secondary)' }}>Temperature Timeline</h5>
                                 <ResponsiveContainer width="100%" height="100%">
                                   <LineChart data={sensorReport.telemetry} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
+                                    <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
                                     <XAxis
                                       dataKey="recorded_at"
                                       tickFormatter={(t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                      tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                                      tick={{ fontSize: 11, fill: chartTextColor }}
                                     />
                                     <YAxis
-                                      tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                                      tick={{ fontSize: 11, fill: chartTextColor }}
                                       domain={['auto', 'auto']}
                                     />
                                     <Tooltip
@@ -577,14 +764,14 @@ export default function Reports() {
                                       labelFormatter={(t) => new Date(t).toLocaleString()}
                                       formatter={(v) => [`${v}°C`, 'Temperature']}
                                     />
-                                    <ReferenceLine y={sensorReport.min_temp_limit} stroke="var(--accent-blue)" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Min Limit', fill: 'var(--accent-blue)', fontSize: 10 }} />
-                                    <ReferenceLine y={sensorReport.max_temp_limit} stroke="var(--accent-red)" strokeDasharray="3 3" label={{ position: 'insideBottomLeft', value: 'Max Limit', fill: 'var(--accent-red)', fontSize: 10 }} />
+                                    <ReferenceLine y={sensorReport.min_temp_limit} stroke={chartAccentColor} strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Min Limit', fill: chartTextColor, fontSize: 10 }} />
+                                    <ReferenceLine y={sensorReport.max_temp_limit} stroke={chartAccentColor} strokeDasharray="3 3" label={{ position: 'insideBottomLeft', value: 'Max Limit', fill: chartTextColor, fontSize: 10 }} />
                                     <Line
                                       type="monotone"
                                       dataKey="temperature"
-                                      stroke="var(--text-primary)"
+                                      stroke={chartAccentColor}
                                       dot={false}
-                                      strokeWidth={2}
+                                      strokeWidth={2.5}
                                     />
                                   </LineChart>
                                 </ResponsiveContainer>
@@ -656,28 +843,31 @@ export default function Reports() {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <CollapsibleChart title="Monthly Compliance Rate" badge="Line Chart">
-            {monthlyData.length > 0 ? (
+            {compactMonthlyData.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart
-                  data={monthlyData}
+                  data={compactMonthlyData}
                   margin={{ top: 12, right: 8, bottom: 0, left: -20 }}
                 >
                   <CartesianGrid
                     strokeDasharray="3 3"
-                    stroke="var(--border-light)"
+                    stroke={chartGridColor}
                   />
 
                   <XAxis
                     dataKey="month"
-                    tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                    tick={{ fontSize: 11, fill: chartTextColor }}
                     axisLine={false}
                     tickLine={false}
                   />
 
                   <YAxis
-                    tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                    tick={{ fontSize: 11, fill: chartTextColor }}
                     axisLine={false}
                     tickLine={false}
+                    domain={[0, 100]}
+                    tickCount={5}
+                    tickFormatter={(value) => `${value}%`}
                   />
 
                   <Tooltip
@@ -688,9 +878,9 @@ export default function Reports() {
                   <Line
                     type="monotone"
                     dataKey="compliance"
-                    stroke="var(--accent-green)"
-                    strokeWidth={2}
-                    dot={{ r: 3, fill: 'var(--accent-green)' }}
+                    stroke={chartComplianceColor}
+                    strokeWidth={2.5}
+                    dot={{ r: 3, fill: chartComplianceColor }}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -708,23 +898,28 @@ export default function Reports() {
           </CollapsibleChart>
 
           <CollapsibleChart title="Excursions per Month" badge="Bar Chart">
-            {monthlyData.length > 0 ? (
+            {compactMonthlyData.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart
-                  data={monthlyData}
-                  margin={{ top: 12, right: 8, bottom: 0, left: -20 }}
+                  data={compactMonthlyData}
+                  margin={{ top: 12, right: 8, bottom: 25, left: -20 }}
                 >
+                <CartesianGrid
+  strokeDasharray="3 3"
+  stroke={chartGridColor}
+/>
                   <XAxis
                     dataKey="month"
-                    tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                    tick={{ fontSize: 11, fill: chartTextColor }}
                     axisLine={false}
                     tickLine={false}
                   />
 
                   <YAxis
-                    tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                    tick={{ fontSize: 11, fill: chartTextColor }}
                     axisLine={false}
                     tickLine={false}
+                    tickCount={4}
                   />
 
                   <Tooltip
@@ -734,7 +929,7 @@ export default function Reports() {
 
                   <Bar
                     dataKey="excursions"
-                    fill="var(--accent-red)"
+                    fill={chartMonthlyExcursionColor}
                     radius={[4, 4, 0, 0]}
                   />
                 </BarChart>
