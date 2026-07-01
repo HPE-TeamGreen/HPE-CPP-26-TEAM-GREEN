@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { users } from '../data/mockData';
 import { hasPermission } from '../data/roles';
-import { createShipment as createShipmentApi, listShipments, registerSensor as registerSensorApi } from '../services/shipmentService';
+import { createShipment as createShipmentApi, listShipments, registerSensor as registerSensorApi, listSensorsForShipment } from '../services/shipmentService';
 import { listAlerts as listAlertsApi, acknowledgeAlert as acknowledgeAlertApi, acknowledgeAllAlerts as acknowledgeAllAlertsApi } from '../services/alertService';
 import { listExcursions as listExcursionsApi, resolveExcursion as resolveExcursionApi } from '../services/excursionService';
 import { getLatestReadings } from '../services/telemetryService';
@@ -29,6 +29,8 @@ export function AppProvider({ children }) {
 
   // Keep a ref to latest telemetry so it survives across poll cycles
   const latestTelemetryRef = React.useRef({});
+  // Keep a ref to sensor metadata (calibration date etc.) so we can persist it across reloads
+  const latestSensorMetaRef = React.useRef({});
 
   const mapShipmentFromApi = (apiShipment) => {
     // const fallback = mockById.get(apiShipment.shipment_id);
@@ -72,7 +74,8 @@ export function AppProvider({ children }) {
       }
 
       // Fetch latest telemetry for all shipments with sensors (not just IN_TRANSIT)
-      // so delivered shipments also show their actual last recorded temperature
+      // and fetch sensor metadata (calibration date) so delivered shipments also
+      // show their last recorded temperature and calibration info.
       const withSensors = data.filter(s => s.sensor_id);
       await Promise.all(withSensors.map(async (s) => {
         try {
@@ -83,11 +86,40 @@ export function AppProvider({ children }) {
         } catch (e) {
           // Keep previous cached value on failure — don't clear it
         }
+
+        try {
+          const sensorList = await listSensorsForShipment(s.shipment_id || s.shipment_id);
+          if (Array.isArray(sensorList) && sensorList.length > 0) {
+            // find matching sensor by id
+            const match = sensorList.find(x => x.sensor_id === s.sensor_id);
+            if (match) {
+              latestSensorMetaRef.current[s.sensor_id] = match;
+            }
+          }
+        } catch (e) {
+          // ignore — keep previous cached metadata
+        }
       }));
 
       // Now map — mapShipmentFromApi will use the cached telemetry
       const normalized = data.map(mapShipmentFromApi);
       setShipments(normalized);
+
+      // Derive sensors from shipments so registered sensors persist across reloads.
+      // Only include sensors for shipments that are not delivered (stay online while in transit).
+      const derivedSensors = normalized
+        .filter(s => s.sensorId && s.status !== 'DELIVERED')
+        .map(s => {
+          const meta = latestSensorMetaRef.current[s.sensorId];
+          const calibrationDate = meta && meta.calibration_date ? meta.calibration_date.slice(0, 10) : '—';
+          return ({
+            id: s.sensorId,
+            shipmentId: s.id,
+            calibrationDate,
+            status: 'ONLINE',
+          });
+        });
+      setSensors(derivedSensors);
     } catch (err) {
       // Only fall back to mock if we have no shipments at all
       setShipments(prev => prev.length > 0 ? prev : []);
