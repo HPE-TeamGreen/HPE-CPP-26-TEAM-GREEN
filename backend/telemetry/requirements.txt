@@ -1,0 +1,6 @@
+aiokafka
+asyncpg
+httpx
+fastapi
+uvicorn
+pydantic

@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemetry
+  namespace: apps
+spec:
+  ports:
+    - port: 8001
+  selector:
+    app: telemetry
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemetry
+  namespace: apps
+spec:
+  selector:
+    matchLabels:
+      app: telemetry
+  template:
+    metadata:
+      labels:
+        app: telemetry
+    spec:
+      containers:
+        - name: telemetry
+          image: tempsafe-telemetry:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "telemetry.py"]
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://postgres:password@postgres.data.svc.cluster.local:5432/tempsafe"
+            - name: KAFKA_BROKER
+              value: "kafka.data.svc.cluster.local:9092"
+            - name: SHIPMENT_API_URL
+              value: "http://shipment.apps.svc.cluster.local:8000"
+          ports:
+            - containerPort: 8001
