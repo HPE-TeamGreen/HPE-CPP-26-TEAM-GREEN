@@ -766,7 +766,7 @@ export default function Reports() {
 
 </body></html>`;
 
-    openPrintableWindow(html, `Sensor Delivery Report – ${s.sensorId}`);
+    openPrintableWindow(html, `Shipment Delivery Report – ${s.sensorId}`);
   };
 
   return (

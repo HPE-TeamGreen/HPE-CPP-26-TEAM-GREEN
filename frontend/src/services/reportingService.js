@@ -47,8 +47,8 @@ export async function getProductSummary() {
 }
 
 /**
- * Fetch sensor delivery report.
+ * Fetch shipment delivery report.
  */
 export async function getSensorDeliveryReport(sensorId) {
   return reportingFetch(`/reports/sensor/${sensorId}/delivery-report`);
-}
+}
