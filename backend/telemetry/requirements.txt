@@ -4,3 +4,4 @@ httpx
 fastapi
 uvicorn
 pydantic
+prometheus-fastapi-instrumentator

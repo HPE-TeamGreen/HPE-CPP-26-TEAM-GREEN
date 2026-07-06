@@ -88,12 +88,14 @@ kubectl apply -f k8s/backend/simulator.yaml
 Write-Host "  Backend services deployed." -ForegroundColor Green
 
 # ----------------------------------------------------------
-# Step 5: Deploy Frontend
+# Step 5: Deploy Frontend & Monitoring
 # ----------------------------------------------------------
 Write-Host ""
-Write-Host "[5/6] Deploying frontend..." -ForegroundColor Yellow
+Write-Host "[5/6] Deploying frontend and monitoring (Prometheus + Grafana)..." -ForegroundColor Yellow
 kubectl apply -f k8s/frontend/frontend.yaml
-Write-Host "  Frontend deployed." -ForegroundColor Green
+kubectl apply -f k8s/infra/prometheus.yaml
+kubectl apply -f k8s/infra/grafana.yaml
+Write-Host "  Frontend and monitoring deployed." -ForegroundColor Green
 
 # ----------------------------------------------------------
 # Step 6: Summary
@@ -111,8 +113,16 @@ Write-Host "--- Pods in apps namespace ---" -ForegroundColor Cyan
 kubectl get pods -n apps
 
 Write-Host ""
+Write-Host "--- Pods in monitoring namespace ---" -ForegroundColor Cyan
+kubectl get pods -n monitoring
+
+Write-Host ""
 Write-Host "--- Services in apps namespace ---" -ForegroundColor Cyan
 kubectl get svc -n apps
+
+Write-Host ""
+Write-Host "--- Services in monitoring namespace ---" -ForegroundColor Cyan
+kubectl get svc -n monitoring
 
 $minikubeIp = minikube ip
 Write-Host ""
@@ -121,4 +131,8 @@ Write-Host "  Access the application:"                      -ForegroundColor Cya
 Write-Host "    minikube service frontend -n apps"          -ForegroundColor White
 Write-Host "  Or directly at:"                              -ForegroundColor Cyan
 Write-Host "    http://${minikubeIp}:30080"                 -ForegroundColor White
+Write-Host ""                                                   -ForegroundColor Cyan
+Write-Host "  Access Monitoring Dashboards:"                -ForegroundColor Cyan
+Write-Host "    Prometheus: http://${minikubeIp}:30090"      -ForegroundColor White
+Write-Host "    Grafana:    http://${minikubeIp}:30091 (Credentials: admin/admin)" -ForegroundColor White
 Write-Host "==============================================" -ForegroundColor Cyan

@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Database Setup (PostgreSQL)
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
-    "postgresql://postgres:password@localhost:5432/tempsafe"
+    "postgresql://postgres:pass123@localhost:5432/tempsafe"
 )
 
 engine = create_engine(DATABASE_URL, echo=False)
@@ -172,6 +172,8 @@ class ActiveSensorInfo(BaseModel):
 
 
 # FastAPI App
+from prometheus_fastapi_instrumentator import Instrumentator
+
 app = FastAPI(
     title="TempSafe — Shipment Microservice",
     description=(
@@ -181,6 +183,8 @@ app = FastAPI(
     ),
     version="1.0.0",
 )
+
+Instrumentator().instrument(app).expose(app)
 
 app.add_middleware(
     CORSMiddleware,

@@ -17,7 +17,7 @@ from pydantic import BaseModel
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - [%(levelname)s] - %(message)s")
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/tempsafe")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:pass123@localhost:5432/tempsafe")
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:9092")
 SHIPMENT_API_URL = os.getenv("SHIPMENT_API_URL", "http://localhost:8000")
 
@@ -302,7 +302,11 @@ async def lifespan(app: FastAPI):
     await pool.close()
     logger.info("Shutdown complete.")
 
+from prometheus_fastapi_instrumentator import Instrumentator
+
 app = FastAPI(title="TempSafe Telemetry Service", version="1.0.0", lifespan=lifespan)
+
+Instrumentator().instrument(app).expose(app)
 
 app.add_middleware(
     CORSMiddleware,

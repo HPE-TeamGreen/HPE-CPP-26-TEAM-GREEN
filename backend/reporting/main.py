@@ -26,18 +26,59 @@ logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:password@localhost:5432/tempsafe"
+    "postgresql://postgres:pass123@localhost:5432/tempsafe"
 )
 
 # --------------------------------------------------
 # FastAPI App
 # --------------------------------------------------
+from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import Gauge
+import asyncio
 
 app = FastAPI(
     title="Temperature Reporting Service",
     description="Generates temperature analytics and compliance reports.",
     version="1.0.0"
 )
+
+Instrumentator().instrument(app).expose(app)
+
+# Custom metrics for TempSafe
+GAUGE_ACTIVE_SHIPMENTS = Gauge('tempsafe_active_shipments', 'Number of active shipments (IN_TRANSIT)')
+GAUGE_TOTAL_EXCURSIONS = Gauge('tempsafe_total_excursions', 'Total number of temperature excursion events')
+GAUGE_COMPLIANCE_PERCENTAGE = Gauge('tempsafe_compliance_percentage', 'Compliance percentage of delivered shipments')
+
+async def update_prometheus_metrics_loop():
+    while True:
+        try:
+            if db_pool:
+                async with db_pool.acquire() as conn:
+                    # Active Shipments
+                    active = await conn.fetchval("SELECT COUNT(*) FROM shipments WHERE status = 'IN_TRANSIT'")
+                    GAUGE_ACTIVE_SHIPMENTS.set(active or 0)
+                    
+                    # Total Excursions
+                    excursions = await conn.fetchval("SELECT COUNT(*) FROM excursion_events")
+                    GAUGE_TOTAL_EXCURSIONS.set(excursions or 0)
+                    
+                    # Compliance Percentage
+                    total_delivered = await conn.fetchval("SELECT COUNT(*) FROM shipments WHERE status = 'DELIVERED'")
+                    if total_delivered and total_delivered > 0:
+                        delivered_with_excursions = await conn.fetchval("""
+                            SELECT COUNT(DISTINCT e.shipment_id)
+                            FROM excursion_events e
+                            JOIN shipments s ON e.shipment_id = s.shipment_id
+                            WHERE s.status = 'DELIVERED'
+                        """)
+                        compliant = total_delivered - (delivered_with_excursions or 0)
+                        pct = (compliant / total_delivered) * 100.0
+                        GAUGE_COMPLIANCE_PERCENTAGE.set(pct)
+                    else:
+                        GAUGE_COMPLIANCE_PERCENTAGE.set(100.0)
+        except Exception as e:
+            logger.error(f"Error updating custom Prometheus metrics: {e}")
+        await asyncio.sleep(10)
 
 # --------------------------------------------------
 # Database Pool
@@ -57,7 +98,8 @@ async def startup():
         max_size=10
     )
 
-    logger.info("Reporting service connected to database.")
+    asyncio.create_task(update_prometheus_metrics_loop())
+    logger.info("Reporting service connected to database and started metrics loop.")
 
 
 @app.on_event("shutdown")

@@ -21,7 +21,7 @@ spec:
   template:
     metadata:
       labels:
-        app: telemetry
+        app: telemetry 
     spec:
       containers:
         - name: telemetry
@@ -30,7 +30,7 @@ spec:
           command: ["python", "telemetry.py"]
           env:
             - name: DATABASE_URL
-              value: "postgresql://postgres:password@postgres.data.svc.cluster.local:5432/tempsafe"
+              value: "postgresql://postgres:pass123@postgres.data.svc.cluster.local:5432/tempsafe"
             - name: KAFKA_BROKER
               value: "kafka.data.svc.cluster.local:9092"
             - name: SHIPMENT_API_URL

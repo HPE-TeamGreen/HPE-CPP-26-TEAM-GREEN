@@ -84,12 +84,14 @@ kubectl apply -f k8s/backend/simulator.yaml
 echo "  ✅ Backend services deployed."
 
 # ----------------------------------------------------------
-# Step 5: Deploy Frontend
+# Step 5: Deploy Frontend & Monitoring
 # ----------------------------------------------------------
 echo ""
-echo "[5/6] Deploying frontend..."
+echo "[5/6] Deploying frontend and monitoring (Prometheus + Grafana)..."
 kubectl apply -f k8s/frontend/frontend.yaml
-echo "  ✅ Frontend deployed."
+kubectl apply -f k8s/infra/prometheus.yaml
+kubectl apply -f k8s/infra/grafana.yaml
+echo "  ✅ Frontend and monitoring deployed."
 
 # ----------------------------------------------------------
 # Step 6: Summary
@@ -105,8 +107,14 @@ echo ""
 echo "--- Pods in 'apps' namespace ---"
 kubectl get pods -n apps
 echo ""
+echo "--- Pods in 'monitoring' namespace ---"
+kubectl get pods -n monitoring
+echo ""
 echo "--- Services in 'apps' namespace ---"
 kubectl get svc -n apps
+echo ""
+echo "--- Services in 'monitoring' namespace ---"
+kubectl get svc -n monitoring
 echo ""
 
 echo "=============================================="
@@ -114,4 +122,8 @@ echo "  Access the application:"
 echo "    minikube service frontend -n apps"
 echo "  Or directly at:"
 echo "    http://$(minikube ip):30080"
+echo ""
+echo "  Access Monitoring Dashboards:"
+echo "    Prometheus: http://$(minikube ip):30090"
+echo "    Grafana:    http://$(minikube ip):30091 (Credentials: admin/admin)"
 echo "=============================================="

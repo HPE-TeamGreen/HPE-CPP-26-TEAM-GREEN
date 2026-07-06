@@ -31,4 +31,4 @@ spec:
             - containerPort: 8002
           env:
             - name: DATABASE_URL
-              value: "postgresql://postgres:password@postgres.data.svc.cluster.local:5432/tempsafe"
+              value: "postgresql://postgres:pass123@postgres.data.svc.cluster.local:5432/tempsafe"

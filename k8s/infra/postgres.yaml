@@ -28,7 +28,7 @@ spec:
           image: timescale/timescaledb:latest-pg15
           env:
             - name: POSTGRES_PASSWORD
-              value: password
+              value: pass123
             - name: POSTGRES_DB
               value: tempsafe
           ports:

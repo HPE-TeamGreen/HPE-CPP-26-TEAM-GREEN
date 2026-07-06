@@ -30,6 +30,6 @@ spec:
           command: ["uvicorn", "shipment-1:app", "--host", "0.0.0.0", "--port", "8000"]
           env:
             - name: DATABASE_URL
-              value: "postgresql://postgres:password@postgres.data.svc.cluster.local:5432/tempsafe"
+              value: "postgresql://postgres:pass123@postgres.data.svc.cluster.local:5432/tempsafe"
           ports:
             - containerPort: 8000
