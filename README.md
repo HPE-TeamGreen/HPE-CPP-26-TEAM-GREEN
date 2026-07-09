@@ -1,20 +1,22 @@
 # ColdChain Monitor — Temperature Excursion & Compliance Platform
 
----
-
-## Team
-
-* Riya Pai
-* Shaamak
-* Russel
-* Ronak
-* Pranav
+A cloud-native platform that ingests IoT temperature telemetry from cold-chain shipments, detects shipment-specific temperature excursions, generates alerts, and provides compliance reporting through a React dashboard.
 
 ---
 
-## Overview
+## Table of Contents
 
-A cloud-native, event-driven platform for cold-chain logistics monitoring. The system ingests IoT temperature telemetry, detects shipment-specific excursions, raises alerts, and surfaces compliance analytics through a React dashboard.
+* [The Problem](#the-problem)
+* [What "Good" Means](#what-good-means)
+* [System Architecture](#system-architecture)
+* [Processing Pipeline](#processing-pipeline)
+* [Core Modules](#core-modules)
+* [Technology Stack](#technology-stack)
+* [Quickstart](#quickstart)
+* [Demo Setup](#demo-setup)
+* [Current Status](#current-status)
+* [Roadmap](#roadmap)
+* [Team](#team)
 
 ---
 
