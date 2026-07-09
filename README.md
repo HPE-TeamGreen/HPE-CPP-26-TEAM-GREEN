@@ -1,8 +1,8 @@
-#  Cloud Native Temperature Excursion and Compliance Platform
+# ColdChain Monitor — Temperature Excursion & Compliance Platform
 
 ---
 
-##  Team Members
+## Team
 
 * Riya Pai
 * Shaamak
@@ -12,179 +12,181 @@
 
 ---
 
-##  Objective
+## Overview
 
-To develop a cloud-native platform that monitors temperature data from IoT devices in real-time, detects temperature excursions, and ensures compliance through alerts and reporting.
-
----
-
-##  System Overview
-
-The system follows a **microservices architecture** with **event-driven communication using Apache Kafka**.
-
-Main components:
-
-* Shipment Service
-* Simulation Service
-* Telemetry Service
-* Excursion Detection Service
-* Alert Management Service
-* Reporting Service
-* Dashboard Service
-
- The system processes IoT temperature data and provides real-time monitoring, alerts, and reports.
+A cloud-native, event-driven platform for cold-chain logistics monitoring. The system ingests IoT temperature telemetry, detects shipment-specific excursions, raises alerts, and surfaces compliance analytics through a React dashboard.
 
 ---
 
-##  Architecture & Data Flow
+## The Problem
 
-* IoT devices generate temperature data (JSON format)
-* Data is sent to API (Telemetry Ingestion)
-* Published to Kafka topic (`telemetry-events`)
-* Services consume and process data
-* Excursions are detected and alerts generated
-* Data stored in databases
-* Dashboard displays real-time information
+Cold-chain shipments generate a high-volume stream of sensor telemetry, and manual monitoring does not scale because:
 
- Refer System Flow & Data Flow Diagram 
+* 📈 Data is continuous and high-volume.
+* 🔇 Most readings are routine, making real violations hard to spot.
+* 🧊 Excursions depend on shipment-specific temperature bounds.
+* 🔗 Correlation across sensors, shipments, and time is essential.
+* 📊 Compliance requires audit-ready alert history and reports.
 
 ---
 
-##  Modules
+## What "Good" Means
+
+### Functional Requirements
+
+* Ingest telemetry from IoT sensors or synthetic simulation.
+* Detect temperature excursions per shipment profile.
+* Publish alerts for warning and critical violations.
+* Store telemetry and excursion state in PostgreSQL.
+* Expose analytics through a dashboard API.
+* Support shipment and sensor registration workflows.
+
+### Non-Functional Requirements
+
+* Event-driven microservices architecture.
+* Kafka-backed stream processing.
+* Kubernetes deployment manifests.
+* Modular services with clear separation of concerns.
+* Resilient and extensible for production-style workflows.
+* Analyst-facing dashboard with alert and report views.
+
+---
+
+## Architecture
+
+This repository is organized into backend services, a frontend UI, and Kubernetes deployment manifests.
+
+### Backend Services
+
+* `backend/simulator` — synthetic sensor data generation.
+* `backend/telemetry` — telemetry ingestion and Kafka publishing.
+* `backend/shipment` — shipment lifecycle, sensor registration, and status management.
+* `backend/reporting` — reporting API for telemetry history and excursion analytics.
+
+### Frontend
+
+* `frontend` — React dashboard application with routes for shipments, sensors, alerts, excursions, and reports.
+
+### Infrastructure
+
+Kubernetes manifests live under `k8s/`:
+
+* `k8s/infra/kafka.yaml`
+* `k8s/infra/postgres.yaml`
+* `k8s/backend/shipment.yaml`
+* `k8s/backend/reporting.yaml`
+* `k8s/backend/telemetry.yaml`
+* `k8s/backend/simulator.yaml`
+* `k8s/namespaces/namespaces.yaml`
+
+---
+
+## Processing Pipeline
+
+1. Synthetic or real sensor data is generated.
+2. Telemetry service validates payloads and publishes Kafka events.
+3. Downstream consumers detect excursions against configured min/max limits.
+4. Alert events are persisted to PostgreSQL.
+5. Reporting APIs expose historical telemetry and excursion analytics.
+6. Frontend dashboard presents the live state and compliance summary.
+
+---
+
+## Core Modules
 
 ### 1. Shipment Management
 
-* Create shipments
-* Assign sensors
-* Define temperature limits
-* Update shipment status
+* Create and manage shipments.
+* Assign sensors and temperature profiles.
+* Track shipment status and lifecycle.
 
 ### 2. Simulation Service
 
-* Generate IoT temperature data
-* Simulate real-time behavior
-* Publish data to Kafka
+* Generate realistic cold-chain telemetry.
+* Publish telemetry for demo and testing.
 
-### 3. Telemetry Service
+### 3. Telemetry Ingestion
 
-* Consume Kafka data
-* Validate and store readings
-* Optimize DB writes
+* Validate sensor payloads.
+* Publish telemetry to Kafka for downstream processing.
 
 ### 4. Excursion Detection
 
-* Compare temperature with limits
-* Detect violations
-* Publish excursion events
+* Compare readings against shipment limits.
+* Detect and flag excursion events.
+* Promote alerts to critical when thresholds breach.
 
 ### 5. Alert Management
 
-* Generate alerts (Warning / Critical)
-* Store alerts
-* Provide API for dashboard
+* Persist excursions and alert history.
+* Offer alert APIs consumed by the dashboard.
 
-### 6. Reporting Service
+### 6. Reporting
 
-* Generate reports (avg temp, excursions)
-* Provide analytics
+* Query telemetry history.
+* Aggregate excursions and compliance metrics.
+* Power dashboard analytics and audit reports.
 
 ### 7. Dashboard
 
-* Display real-time data
-* Show alerts and reports
+* React UI for operations and compliance.
+* Visualizes shipments, sensors, alerts, excursions, and reports.
+* Supports role-aware access for operators and auditors.
 
 ---
 
-##  Technologies Used
+## Technology Stack
 
-* Apache Kafka (event streaming)
-* FastAPI (API layer)
-* Kubernetes
-* TimeScaleDB (time-series DB)
-* React (frontend dashboard)
-
----
-
-##  Security
-
-* JWT-based authentication
-* Role-based access:
-
-  * Client
-  * QA Officer
-  * Compliance Officer
+* Apache Kafka — stream processing
+* FastAPI — backend services
+* PostgreSQL — persistence
+* React — dashboard UI
+* Kubernetes — deployment
+* Docker — containerization
 
 ---
 
-##  Weekly Progress
+## Quickstart
 
+```bash
+# 1. Install frontend dependencies
+cd frontend
+npm install
+npm start
+```
 
-### Week 1
-- Learned version control fundamentals using Git & GitHub  
-- Understood repository management and collaboration workflows  
-- Learned basics of containerization using Docker  
-- Studied PostgreSQL database concepts and basic SQL  
+Open the dashboard at `http://localhost:3000`.
 
----
-
-### Week 2
-
-* Project idea discussion and problem understanding
-* Identified stakeholders and actors (Logistics Manager, QA Officer, etc.) 
-* Requirement analysis (functional & non-functional)
-* Designed database schema
-* Created:
-
-  * Use Case Diagram
-  * Activity Diagram
-  * Data Flow Diagram
+For backend and infrastructure, deploy the manifests in `k8s/` or use your preferred local environment.
 
 ---
 
-### Week 3
+## Demo Setup
 
-* Designed complete microservices architecture
-* Defined working of all services 
-* Implemented system flow design (end-to-end pipeline)
-* Studied Apache Kafka concepts:
-
-  * Producer–Consumer model
-  * Event-driven communication
-* Studied Kafka topics:
-
-  * telemetry-events
-  * excursion-events
-* Studied databases:
-
-  * TimeScaleDB
-  * PostgreSQL
-* Understood authentication flow (JWT, roles)
+Use `scripts/seed_demo_data.py` to populate demo shipments, sensors, and status data for the dashboard.
 
 ---
 
-##  Current Status
+## Current Status
 
-Project is in **design and architecture phase**.
-System flow, modules, and communication are defined.
-Implementation has not yet started.
-
----
-
-##  Work In Progress
-
-* Learning Apache Kafka setup
-* Planning IoT simulation
-* Preparing backend implementation
-* Working with Kubernetes
+* Service design and responsibilities are defined.
+* Backend templates exist for telemetry, shipment, simulator, and reporting.
+* Frontend dashboard scaffold is complete.
+* Kubernetes manifests cover infra and service deployment.
 
 ---
 
-##  Next Steps
+## Roadmap
 
-* Setup Kafka environment
-* Create topics (`telemetry-events`, `excursion-events`)
-* Implement simulation service
-* Start backend API development
-* Integrate services with Kafka
+* Complete backend ingestion and alerting flows.
+* Wire Kafka topics for telemetry and excursion processing.
+* Integrate frontend with live backend APIs.
+* Add end-to-end testing and demo data automation.
+* Harden deployment for Kubernetes and local development.
 
 ---
+
+## Repository Notes
+
+This project is built as a cold-chain monitoring platform with a strong focus on excursion detection, alerting, and compliance reporting. It is designed to grow into richer analytics and sensor correlation over time.
+
