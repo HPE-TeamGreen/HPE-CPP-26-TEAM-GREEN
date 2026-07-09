@@ -88,7 +88,9 @@ Kubernetes manifests live under `k8s/`:
 
 ## Architecture Diagram
 
-See the system architecture diagram in [`ARCHITECTURE.md`](ARCHITECTURE.md) for a visual overview of TempSafe data flow and service interaction.
+![TempSafe Architecture](assets/architecture.svg)
+
+A visual overview of TempSafe data flow, including telemetry ingestion, Kafka streaming, backend services, PostgreSQL storage, and the React dashboard.
 
 ---
 
