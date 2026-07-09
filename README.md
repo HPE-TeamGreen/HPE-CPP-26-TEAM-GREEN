@@ -1,6 +1,6 @@
-# ColdChain Monitor — Temperature Excursion & Compliance Platform
+# TempSafe — Cold Chain Temperature Excursion & Compliance Platform
 
-A cloud-native platform that ingests IoT temperature telemetry from cold-chain shipments, detects shipment-specific temperature excursions, generates alerts, and provides compliance reporting through a React dashboard.
+TempSafe is a cloud-native monitoring solution for refrigerated logistics. It ingests IoT temperature telemetry, identifies shipment-specific excursions, generates alerts, and delivers compliance reporting through a React-based analyst dashboard.
 
 ---
 
@@ -22,13 +22,15 @@ A cloud-native platform that ingests IoT temperature telemetry from cold-chain s
 
 ## The Problem
 
-Cold-chain shipments generate a high-volume stream of sensor telemetry, and manual monitoring does not scale because:
+Cold-chain logistics generate continuous streams of temperature telemetry from many distributed sensors. Manual monitoring is inefficient and often misses important deviations due to the scale and complexity of the data.
 
-* 📈 Data is continuous and high-volume.
-* 🔇 Most readings are routine, making real violations hard to spot.
-* 🧊 Excursions depend on shipment-specific temperature bounds.
-* 🔗 Correlation across sensors, shipments, and time is essential.
-* 📊 Compliance requires audit-ready alert history and reports.
+Key challenges include:
+
+* 📈 There is too much data to inspect manually.
+* 🔇 Most readings are normal, so real issues can be missed.
+* 🧊 Each shipment has its own temperature limits.
+* 🔗 Events must be correlated across sensors and shipment timelines.
+* 📊 Compliance needs accurate alert history and reports.
 
 ---
 
@@ -159,7 +161,14 @@ npm start
 
 Open the dashboard at `http://localhost:3000`.
 
-For backend and infrastructure, deploy the manifests in `k8s/` or use your preferred local environment.
+For backend services and infrastructure, deploy the manifests in `k8s/` or run each service locally using the FastAPI apps in `backend/`.
+
+Recommended startup sequence:
+
+1. Start PostgreSQL and Kafka using your local environment or Kubernetes manifests in `k8s/infra`.
+2. Launch backend services under `backend/`.
+3. Seed demo shipments and sensors with `python scripts/seed_demo_data.py`.
+4. Start the frontend UI.
 
 ---
 
@@ -185,6 +194,16 @@ Use `scripts/seed_demo_data.py` to populate demo shipments, sensors, and status 
 * Integrate frontend with live backend APIs.
 * Add end-to-end testing and demo data automation.
 * Harden deployment for Kubernetes and local development.
+
+---
+
+## Team
+
+* Riya Pai
+* Shaamak Madhwaraj Bolar
+* Russel Mendes
+* Pranav Purushotham Nayak
+* Ronak Shetty
 
 ---
 
