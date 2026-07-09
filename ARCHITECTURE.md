@@ -11,15 +11,15 @@ flowchart LR
     end
 
     subgraph Platform [TempSafe Platform]
-        T[Telemetry Service]\n(validate, normalize, publish)
-        K[Kafka Topics]\n(telemetry-events)
-        D[Shipment Service]\n(manage shipments, sensors)
-        R[Reporting Service]\n(query analytics, alerts)
+        T["Telemetry Service<br/>validate, normalize, publish"]
+        K["Kafka Topics<br/>telemetry-events"]
+        D["Shipment Service<br/>manage shipments, sensors"]
+        R["Reporting Service<br/>query analytics, alerts"]
         P[(PostgreSQL)]
     end
 
     subgraph Frontend [React Dashboard]
-        F[Dashboard UI]\n(status, alerts, reports)
+        F["Dashboard UI<br/>status, alerts, reports"]
     end
 
     S1 --> T
