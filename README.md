@@ -10,6 +10,7 @@ TempSafe is a cloud-native monitoring solution for refrigerated logistics. It in
 * [What "Good" Means](#what-good-means)
 * [System Architecture](#system-architecture)
 * [Processing Pipeline](#processing-pipeline)
+* [Architecture Diagram](#architecture-diagram)
 * [Core Modules](#core-modules)
 * [Technology Stack](#technology-stack)
 * [Quickstart](#quickstart)
@@ -82,6 +83,12 @@ Kubernetes manifests live under `k8s/`:
 * `k8s/backend/telemetry.yaml`
 * `k8s/backend/simulator.yaml`
 * `k8s/namespaces/namespaces.yaml`
+
+---
+
+## Architecture Diagram
+
+See the system architecture diagram in [`ARCHITECTURE.md`](ARCHITECTURE.md) for a visual overview of TempSafe data flow and service interaction.
 
 ---
 
