@@ -45,7 +45,7 @@
     <rect class="box" x="620" y="90" width="260" height="120" />
     <text x="750" y="120" text-anchor="middle" class="text-title">Reporting Service</text>
     <text x="750" y="145" text-anchor="middle" class="text">Analytics API</text>
-    <text x="750" y="165" text-anchor="middle" class="text">Alerts & history</text>
+    <text x="750" y="165" text-anchor="middle" class="text">Alerts &amp; history</text>
   </g>
 
   <g>
