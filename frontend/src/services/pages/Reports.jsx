@@ -199,13 +199,13 @@ const dispositionRules = {
     color: '#f59e0b',
   },
   noNeedToUse: {
-    verdict: 'No need to use',
+    verdict: 'Not suitable for use',
     summary: (productLabel, details) => `The shipment recorded ${details.excursions} excursion${details.excursions === 1 ? '' : 's'} and showed ${details.severity}. ${productLabel} should not be used and may require disposal or requalification.`,
     tone: 'danger',
     color: 'var(--accent-red)',
   },
   doNotUse: {
-    verdict: 'Do not use',
+    verdict: 'Not suitable for use',
     summary: (productLabel, details) => `The shipment recorded ${details.excursions} excursion${details.excursions === 1 ? '' : 's'} and showed ${details.severity}. ${productLabel} should not be released for use without requalification or disposal.`,
     tone: 'danger',
     color: 'var(--accent-red)',

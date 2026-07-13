@@ -618,7 +618,7 @@ async def get_sensor_delivery_report(sensor_id: str):
             "min_temp": min_temp,
             "max_temp": max_temp,
             "avg_temp": round(avg_temp, 2),
-            "total_excursions": sum(1 for r in readings if r["temperature"] < shipment_data["min_temp_limit"] or r["temperature"] > shipment_data["max_temp_limit"])
+            "total_excursions": len(excursions)
         },
         "excursions": excursion_list,
         "telemetry": telemetry_list
